@@ -1,293 +1,388 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState, useEffect } from 'react'
+import { AppSidebar } from "@/components/app-sidebar"
+import { ChartAreaInteractive } from "@/components/chart-area-interactive"
+import { ProjectsTable, ProjectRow } from "@/components/projects-table"
+import { SectionCards } from "@/components/section-cards"
+import { SiteHeader } from "@/components/site-header"
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import { Plus, FolderOpen, FileText, Upload, Search } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { UploadDocumentModal } from '@/components/upload-document-modal'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/auth-context'
+import { toast } from 'sonner'
 
 interface Project {
   id: string
   name: string
   description: string | null
+  created_by: string
   created_at: string
-  document_count?: number
 }
 
 interface Document {
   id: string
   project_id: string
   name: string
-  pdf_url: string
-  file_size: number | null
-  page_count: number | null
   created_at: string
 }
 
+interface Comment {
+  id: string
+  document_id: string
+  comment_status: string
+  created_at: string
+}
+
+interface ProjectMember {
+  project_id: string
+  user_id: string
+  role: string
+}
+
 export default function ProjectsPage() {
-  const router = useRouter()
+  const { user } = useAuth()
+  const supabase = createClient()
+
   const [projects, setProjects] = useState<Project[]>([])
-  const [documents, setDocuments] = useState<Document[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [allDocuments, setAllDocuments] = useState<Document[]>([])
+  const [allComments, setAllComments] = useState<Comment[]>([])
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploadModalOpen, setUploadModalOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectDescription, setNewProjectDescription] = useState('')
 
   useEffect(() => {
-    fetchProjects()
-  }, [])
-
-  useEffect(() => {
-    if (selectedProjectId) {
-      fetchDocuments(selectedProjectId)
+    if (user) {
+      fetchData()
     }
-  }, [selectedProjectId])
+  }, [user])
 
-  const fetchProjects = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*, documents(count)')
-        .order('created_at', { ascending: false })
 
-      if (error) throw error
+      // First fetch project members to determine which projects user has access to
+      const { data: membersData, error: membersError } = await supabase
+        .from('project_members')
+        .select('project_id, user_id, role')
+        .eq('user_id', user?.id)
 
-      const projectsWithCount = data?.map(project => ({
-        ...project,
-        document_count: project.documents?.[0]?.count || 0
-      })) || []
+      if (membersError) throw membersError
+      setProjectMembers(membersData || [])
 
-      setProjects(projectsWithCount)
+      const userProjectIds = (membersData || []).map(m => m.project_id)
 
-      // Auto-select first project if none selected
-      if (!selectedProjectId && projectsWithCount.length > 0) {
-        setSelectedProjectId(projectsWithCount[0].id)
+      // Fetch only projects the user has access to (unless admin)
+      const isAdmin = user?.profile?.role === 'admin'
+      let projectsQuery = supabase.from('projects').select('*').order('name')
+
+      // If not admin, filter to only user's projects
+      if (!isAdmin && userProjectIds.length > 0) {
+        projectsQuery = projectsQuery.in('id', userProjectIds)
+      } else if (!isAdmin && userProjectIds.length === 0) {
+        // User has no project access and is not admin
+        setProjects([])
+        setAllDocuments([])
+        setAllComments([])
+        setLoading(false)
+        return
       }
+
+      const { data: projectsData, error: projectsError } = await projectsQuery
+
+      if (projectsError) throw projectsError
+      setProjects(projectsData || [])
+
+      // Fetch documents only for accessible projects
+      const accessibleProjectIds = projectsData?.map(p => p.id) || []
+      let docsQuery = supabase
+        .from('documents')
+        .select('id, name, project_id, created_at')
+        .order('name')
+
+      if (accessibleProjectIds.length > 0) {
+        docsQuery = docsQuery.in('project_id', accessibleProjectIds)
+      } else {
+        // No accessible projects
+        setAllDocuments([])
+        setAllComments([])
+        setLoading(false)
+        return
+      }
+
+      const { data: docsData, error: docsError } = await docsQuery
+
+      if (docsError) throw docsError
+      setAllDocuments(docsData || [])
+
+      // Fetch comments only for accessible documents
+      const documentIds = docsData?.map(d => d.id) || []
+      if (documentIds.length > 0) {
+        const { data: commentsData, error: commentsError } = await supabase
+          .from('comments')
+          .select('id, document_id, comment_status, created_at')
+          .in('document_id', documentIds)
+
+        if (commentsError) throw commentsError
+        setAllComments(commentsData || [])
+      } else {
+        setAllComments([])
+      }
+
     } catch (error) {
-      console.error('Error fetching projects:', error)
+      console.error('Error fetching data:', error)
+      toast.error('Failed to load projects')
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchDocuments = async (projectId: string) => {
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) {
+      toast.error('Please enter a project name')
+      return
+    }
+
+    if (!user?.id) {
+      toast.error('User not authenticated')
+      return
+    }
+
     try {
       const { data, error } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
+        .from('projects')
+        .insert({
+          name: newProjectName.trim(),
+          description: newProjectDescription.trim() || null,
+          created_by: user.id,
+        })
+        .select()
+        .single()
 
       if (error) throw error
-      setDocuments(data || [])
-    } catch (error) {
-      console.error('Error fetching documents:', error)
+
+      toast.success('Project created successfully!')
+      setCreateProjectOpen(false)
+      setNewProjectName('')
+      setNewProjectDescription('')
+      fetchData()
+    } catch (error: any) {
+      console.error('Error creating project:', error)
+      toast.error(error.message || 'Failed to create project')
     }
   }
 
-  const handleUploadComplete = () => {
-    if (selectedProjectId) {
-      fetchDocuments(selectedProjectId)
+  const handleUpdateProject = async (projectId: string, updates: { name?: string }) => {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update(updates)
+        .eq('id', projectId)
+
+      if (error) throw error
+
+      toast.success('Project updated successfully!')
+      fetchData()
+    } catch (error: any) {
+      console.error('Error updating project:', error)
+      toast.error(error.message || 'Failed to update project')
     }
-    fetchProjects()
   }
 
-  const formatFileSize = (bytes: number | null) => {
-    if (!bytes) return 'N/A'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+  const handleDeleteProject = async (projectId: string) => {
+    // Get document and comment counts
+    const projectDocs = allDocuments.filter(doc => doc.project_id === projectId)
+    const docIds = projectDocs.map(doc => doc.id)
+    const projectComments = allComments.filter(comment => docIds.includes(comment.document_id))
+
+    const message = projectDocs.length > 0 || projectComments.length > 0
+      ? `This project has ${projectDocs.length} document(s) and ${projectComments.length} comment(s). If you delete this project, all associated data will be permanently deleted. Are you sure?`
+      : 'Are you sure you want to delete this project?'
+
+    if (confirm(message)) {
+      try {
+        const { error } = await supabase
+          .from('projects')
+          .delete()
+          .eq('id', projectId)
+
+        if (error) throw error
+
+        toast.success('Project deleted successfully!')
+        fetchData()
+      } catch (error: any) {
+        console.error('Error deleting project:', error)
+        toast.error(error.message || 'Failed to delete project')
+      }
+    }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
+  // Transform projects to include counts and ownership
+  const projectsWithCounts: ProjectRow[] = projects.map(project => {
+    const projectDocs = allDocuments.filter(doc => doc.project_id === project.id)
+    const docIds = projectDocs.map(doc => doc.id)
+    const projectComments = allComments.filter(comment => docIds.includes(comment.document_id))
+
+    // Calculate annotation counts by status
+    const proposedCount = projectComments.filter(c => c.comment_status?.toLowerCase() === 'proposed').length
+    const approvedCount = projectComments.filter(c => c.comment_status?.toLowerCase() === 'accepted').length
+    const rejectedCount = projectComments.filter(c => c.comment_status?.toLowerCase() === 'rejected').length
+
+    // Check if current user is owner
+    const membership = projectMembers.find(
+      pm => pm.project_id === project.id && pm.user_id === user?.id
+    )
+    const isOwner = membership?.role === 'owner'
+
+    return {
+      id: project.id,
+      name: project.name,
+      document_count: projectDocs.length,
+      proposed_count: proposedCount,
+      approved_count: approvedCount,
+      rejected_count: rejectedCount,
+      is_owner: isOwner,
+    }
+  })
+
+  // Aggregate comments by date for the chart
+  const chartData = (() => {
+    const dateMap = new Map<string, { total: number; approved: number }>()
+
+    allComments.forEach(comment => {
+      const date = new Date(comment.created_at).toISOString().split('T')[0]
+      const current = dateMap.get(date) || { total: 0, approved: 0 }
+      current.total += 1
+      if (comment.comment_status?.toLowerCase() === 'accepted') {
+        current.approved += 1
+      }
+      dateMap.set(date, current)
     })
-  }
 
-  const filteredDocuments = documents.filter(doc =>
-    doc.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    // Convert to array and sort by date
+    const dataPoints = Array.from(dateMap.entries())
+      .map(([date, counts]) => ({
+        date,
+        total: counts.total,
+        approved: counts.approved,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
 
-  const selectedProject = projects.find(p => p.id === selectedProjectId)
+    // Calculate cumulative totals
+    let cumulativeTotal = 0
+    let cumulativeApproved = 0
+
+    return dataPoints.map(point => {
+      cumulativeTotal += point.total
+      cumulativeApproved += point.approved
+      return {
+        date: point.date,
+        total: cumulativeTotal,
+        approved: cumulativeApproved,
+      }
+    })
+  })()
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">Projects & Documents</h1>
-          <p className="text-muted-foreground">Manage your PDF documents and annotations</p>
-        </div>
-        <Button onClick={() => setUploadModalOpen(true)} disabled={!selectedProjectId}>
-          <Upload className="w-4 h-4 mr-2" />
-          Upload Document
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-12 gap-6">
-        {/* Projects Sidebar */}
-        <div className="col-span-3">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Projects</CardTitle>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="p-4 text-center text-muted-foreground">Loading...</div>
-              ) : projects.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground">No projects yet</div>
-              ) : (
-                <div className="space-y-1 p-2">
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => setSelectedProjectId(project.id)}
-                      className={`w-full text-left px-3 py-2 rounded-md transition-colors ${
-                        selectedProjectId === project.id
-                          ? 'bg-accent text-accent-foreground'
-                          : 'hover:bg-accent/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <FolderOpen className="w-4 h-4 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{project.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {project.document_count || 0} documents
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Documents List */}
-        <div className="col-span-9">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>
-                    {selectedProject ? selectedProject.name : 'Select a project'}
-                  </CardTitle>
-                  {selectedProject?.description && (
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {selectedProject.description}
-                    </p>
-                  )}
-                </div>
-                {selectedProjectId && (
-                  <div className="relative w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search documents..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {!selectedProjectId ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <FolderOpen className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p>Select a project to view documents</p>
-                </div>
-              ) : filteredDocuments.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p className="mb-4">
-                    {searchQuery ? 'No documents found' : 'No documents in this project yet'}
-                  </p>
-                  {!searchQuery && (
-                    <Button onClick={() => setUploadModalOpen(true)}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload First Document
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Document Name</TableHead>
-                      <TableHead>Pages</TableHead>
-                      <TableHead>File Size</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredDocuments.map((doc) => (
-                      <TableRow
-                        key={doc.id}
-                        className="cursor-pointer hover:bg-accent/50"
-                        onClick={() => router.push(`/documents/${doc.id}`)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-medium">{doc.name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {doc.page_count ? (
-                            <Badge variant="secondary">{doc.page_count} pages</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatFileSize(doc.file_size)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(doc.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/documents/${doc.id}`)
-                          }}>
-                            Open
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Upload Modal */}
-      <UploadDocumentModal
-        open={uploadModalOpen}
-        onOpenChange={setUploadModalOpen}
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar
+        variant="inset"
         projects={projects}
-        onUploadComplete={handleUploadComplete}
+        documents={allDocuments}
       />
-    </div>
+      <SidebarInset>
+        <SiteHeader projectName="All Projects" />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <SectionCards
+                card1Value={projects.length}
+                card2Value={allDocuments.length}
+                totalPending={allComments.filter(c => c.comment_status === 'proposed').length}
+                totalAccepted={allComments.filter(c => c.comment_status === 'accepted').length}
+              />
+              <div className="px-4 lg:px-6">
+                <ChartAreaInteractive data={chartData} />
+              </div>
+              {loading ? (
+                <div className="px-4 lg:px-6 text-center py-12 text-muted-foreground">
+                  Loading projects...
+                </div>
+              ) : (
+                <ProjectsTable
+                  data={projectsWithCounts}
+                  onAddProject={() => setCreateProjectOpen(true)}
+                  onUpdateProject={handleUpdateProject}
+                  onDeleteProject={handleDeleteProject}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </SidebarInset>
+
+      {/* Create Project Dialog */}
+      <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              Add a new project to organize your documents
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project Name</Label>
+              <Input
+                id="project-name"
+                placeholder="e.g., Q4 Financial Review"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCreateProject()
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="project-description">Description (optional)</Label>
+              <Textarea
+                id="project-description"
+                placeholder="Brief description of the project..."
+                value={newProjectDescription}
+                onChange={(e) => setNewProjectDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateProjectOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateProject}>
+              Create Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SidebarProvider>
   )
 }

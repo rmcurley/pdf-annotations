@@ -22,9 +22,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { MessageSquarePlus, MessageSquare, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Save } from 'lucide-react'
 import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 interface PdfViewerProps {
   pdfUrl: string
@@ -43,6 +44,10 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [documentPageNumber, setDocumentPageNumber] = useState('')
   const [sectionNumber, setSectionNumber] = useState('')
   const [showAddButton, setShowAddButton] = useState(false)
+  const [buttonPosition, setButtonPosition] = useState<{ x: number; y: number } | null>(null)
+  const [inlineAnnotationType, setInlineAnnotationType] = useState<'comment' | 'edit'>('comment')
+  const [showInlineDetails, setShowInlineDetails] = useState(false)
+  const [inlineAnnotationText, setInlineAnnotationText] = useState('')
   const [scale, setScale] = useState(100) // Zoom percentage (50% to 200%)
   const [scaleMode, setScaleMode] = useState<'custom' | 'page-fit' | 'page-width'>('custom')
   const [currentPage, setCurrentPage] = useState(1)
@@ -548,6 +553,26 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
+  const handleInlineSave = () => {
+    if (selectedHighlight && inlineAnnotationText.trim()) {
+      // Save the annotation directly
+      onAddHighlight(
+        selectedHighlight,
+        inlineAnnotationText.trim(),
+        inlineAnnotationType,
+        'proposed', // Default status
+        sectionNumber,
+      )
+
+      // Clear state
+      setShowAddButton(false)
+      setSelectedHighlight(null)
+      setInlineAnnotationText('')
+      setShowInlineDetails(false)
+      setInlineAnnotationType('comment')
+    }
+  }
+
   const handleSelectionComplete = (highlight: NewHighlight) => {
     setSelectedHighlight(highlight)
     setSelectedText(highlight.content.text || '')
@@ -560,8 +585,24 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     setSectionNumber(nearestBookmark)
     console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark)
 
+    // Calculate button position based on selection
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      const rect = range.getBoundingClientRect()
+
+      // Position button above the selection, centered
+      setButtonPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10 // 10px above the selection
+      })
+    }
+
     // Extract document-specific page number from the text layer
     // Look for the last text element on the page (usually the page number)
+    // Default to PDF page number as fallback
+    setDocumentPageNumber(pdfPageNumber.toString())
+
     setTimeout(() => {
       const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`)
       if (pageElement) {
@@ -577,8 +618,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             if (lastText && /^\d+$/.test(lastText)) {
               console.log('Extracted document page number:', lastText)
               setDocumentPageNumber(lastText)
-            } else {
-              setDocumentPageNumber('')
             }
           }
         }
@@ -705,16 +744,16 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             <div className="flex items-center justify-between gap-3 mb-2">
               <div className="flex items-center gap-2">
                 {/* Type Icon */}
-                <div className={`w-8 h-8 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
-                  <TypeIcon className={`w-4 h-4 ${statusColors.icon}`} />
+                <div className={`w-6 h-6 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
+                  <TypeIcon className={`w-3.5 h-3.5 ${statusColors.icon}`} />
                 </div>
-                {/* Comment ID */}
+                {/* Annotation ID */}
                 <div className="font-semibold text-sm">
                   {shortId}
                 </div>
               </div>
               {/* Status Badge */}
-              <Badge className={`${statusColors.badge} flex items-center gap-1 text-xs px-2 py-0.5 flex-shrink-0`}>
+              <Badge variant="secondary" className={`${statusColors.badge} border-0 flex items-center gap-1 text-xs px-2 py-0.5 flex-shrink-0`}>
                 {commentStatus.toLowerCase() === 'proposed' && (
                   <CircleHelp className="w-3 h-3" />
                 )}
@@ -728,7 +767,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               </Badge>
             </div>
 
-            {/* Comment text */}
+            {/* Annotation text */}
             <div className="text-foreground leading-relaxed mb-2">
               {highlight.comment?.text}
             </div>
@@ -739,7 +778,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             {/* User info - right aligned */}
             <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
               <CircleUserRound className="w-3.5 h-3.5" />
-              <span>Robert Curley</span>
+              <span>{(highlight.comment as any)?.user_name || 'Unknown User'}</span>
             </div>
           </div>
         }
@@ -759,46 +798,48 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   return (
     <>
-      <div className="h-full w-full relative bg-slate-700" onClick={handlePdfClick}>
-        <PdfLoader
-          url={pdfUrl}
-          beforeLoad={<div className="p-8 text-center">Loading PDF...</div>}
-          errorMessage={
-            <div className="p-8 text-center text-destructive">
-              Failed to load PDF. Please check the URL.
-            </div>
-          }
-        >
-          {(pdfDocument) => {
-            // Store PDF document reference for bookmark extraction
-            if (pdfDocumentRef.current !== pdfDocument) {
-              pdfDocumentRef.current = pdfDocument
+      <div className="h-full w-full flex flex-col bg-zinc-300 overflow-hidden" onClick={handlePdfClick}>
+        {/* PDF Viewer - takes remaining space */}
+        <div className="flex-1 relative overflow-hidden min-h-0">
+          <PdfLoader
+            url={pdfUrl}
+            beforeLoad={<div className="p-8 text-center">Loading PDF...</div>}
+            errorMessage={
+              <div className="p-8 text-center text-destructive">
+                Failed to load PDF. Please check the URL.
+              </div>
+            }
+          >
+            {(pdfDocument) => {
+              // Store PDF document reference for bookmark extraction
+              if (pdfDocumentRef.current !== pdfDocument) {
+                pdfDocumentRef.current = pdfDocument
 
-              // Set total pages using setTimeout to avoid state update during render
-              if (!totalPagesSetRef.current) {
-                setTimeout(() => {
-                  setTotalPages(pdfDocument.numPages)
-                  totalPagesSetRef.current = true
-                  console.log('Set total pages from pdfDocument:', pdfDocument.numPages)
-                }, 0)
+                // Set total pages using setTimeout to avoid state update during render
+                if (!totalPagesSetRef.current) {
+                  setTimeout(() => {
+                    setTotalPages(pdfDocument.numPages)
+                    totalPagesSetRef.current = true
+                    console.log('Set total pages from pdfDocument:', pdfDocument.numPages)
+                  }, 0)
+                }
+
+                // Extract bookmarks asynchronously (doesn't trigger re-render)
+                pdfDocument.getOutline().then(async (outline: any) => {
+                  if (outline) {
+                    const flattened = await flattenBookmarks(outline, pdfDocument)
+                    flattened.sort((a, b) => a.pageNumber - b.pageNumber)
+                    pdfBookmarksRef.current = flattened
+                    console.log('Extracted bookmarks:', flattened)
+                  }
+                }).catch((error: any) => {
+                  console.warn('Error extracting bookmarks:', error)
+                })
               }
 
-              // Extract bookmarks asynchronously (doesn't trigger re-render)
-              pdfDocument.getOutline().then(async (outline: any) => {
-                if (outline) {
-                  const flattened = await flattenBookmarks(outline, pdfDocument)
-                  flattened.sort((a, b) => a.pageNumber - b.pageNumber)
-                  pdfBookmarksRef.current = flattened
-                  console.log('Extracted bookmarks:', flattened)
-                }
-              }).catch((error: any) => {
-                console.warn('Error extracting bookmarks:', error)
-              })
-            }
-
-            return (
-              <div className="absolute inset-0" style={{ paddingBottom: '44px' }}>
-                <PdfHighlighter
+              return (
+                <div className="absolute inset-0">
+                  <PdfHighlighter
                   key={`${scaleMode}-${scale}`}
                   pdfDocument={pdfDocument}
                   pdfScaleValue={getScaleValue()}
@@ -829,28 +870,138 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                 highlightTransform={highlightTransform}
                 highlights={highlights}
               />
-              </div>
-            )
-          }}
-        </PdfLoader>
+                </div>
+              )
+            }}
+          </PdfLoader>
+        </div>
 
-        {/* Floating Add Comment Button */}
-        {showAddButton && !drawerOpen && (
-          <div className="fixed bottom-20 right-8 z-[9999] animate-in slide-in-from-bottom-4">
-            <Button
-              size="lg"
-              onClick={handleAddCommentClick}
-              className="flex items-center gap-2 shadow-2xl"
-            >
-              <MessageSquarePlus className="w-5 h-5" />
-              Add Comment
-            </Button>
+        {/* Inline Annotation Popover */}
+        {showAddButton && !drawerOpen && buttonPosition && selectedHighlight && (
+          <div
+            className="fixed z-[9999] animate-in fade-in-0 zoom-in-95"
+            style={{
+              left: `${buttonPosition.x}px`,
+              top: `${buttonPosition.y}px`,
+              transform: 'translate(-50%, calc(-100% - 8px))' // Center horizontally and position above
+            }}
+          >
+            <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[320px]">
+              {/* Type Selection Icons */}
+              <div className="flex gap-2 mb-2">
+                <Button
+                  size="sm"
+                  variant={inlineAnnotationType === 'comment' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setInlineAnnotationType('comment')}
+                >
+                  <MessageCircle className="w-4 h-4 mr-1" />
+                  Comment
+                </Button>
+                <Button
+                  size="sm"
+                  variant={inlineAnnotationType === 'edit' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setInlineAnnotationType('edit')}
+                >
+                  <Pencil className="w-4 h-4 mr-1" />
+                  Edit
+                </Button>
+              </div>
+
+              {/* Quick Annotation Textarea */}
+              <Textarea
+                className="inline-annotation-textarea text-sm mb-2 min-h-[80px] focus-visible:ring-0 focus-visible:ring-offset-0"
+                placeholder="Write your annotation..."
+                value={inlineAnnotationText}
+                onChange={(e) => setInlineAnnotationText(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowAddButton(false)
+                    setSelectedHighlight(null)
+                    setInlineAnnotationText('')
+                    setShowInlineDetails(false)
+                  } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    // Quick save directly
+                    e.preventDefault()
+                    handleInlineSave()
+                  }
+                }}
+              />
+
+              {/* Details Section (expandable) */}
+              {showInlineDetails && (
+                <div className="mb-2 pb-2 border-b space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Section</label>
+                      <Input
+                        className="h-7 text-xs"
+                        placeholder="e.g., 3.2.1"
+                        value={sectionNumber}
+                        onChange={(e) => setSectionNumber(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Page</label>
+                      <Input
+                        className="h-7 text-xs"
+                        placeholder="Page"
+                        value={documentPageNumber}
+                        onChange={(e) => setDocumentPageNumber(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="flex-1 text-xs"
+                  onClick={() => {
+                    setShowAddButton(false)
+                    setSelectedHighlight(null)
+                    setInlineAnnotationText('')
+                    setShowInlineDetails(false)
+                  }}
+                >
+                  <Ban className="w-3 h-3 mr-1" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-xs"
+                  onClick={() => setShowInlineDetails(!showInlineDetails)}
+                >
+                  <UnfoldVertical className="w-3 h-3 mr-1" />
+                  Details
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={handleInlineSave}
+                  disabled={!inlineAnnotationText.trim()}
+                >
+                  <Save className="w-3 h-3 mr-1" />
+                  Save
+                </Button>
+              </div>
+
+              <div className="text-[10px] text-muted-foreground mt-1 text-center">
+                Cmd/Ctrl+Enter to save • Esc to cancel
+              </div>
+            </div>
           </div>
         )}
 
         {/* Search Bar (appears above navigation) */}
         {searchOpen && (
-          <div className="absolute bottom-12 left-6 bg-card border border-border rounded-md shadow-lg p-2 z-[9999] flex items-center gap-2">
+          <div className="absolute bottom-16 left-6 bg-card border border-border rounded-md shadow-lg p-2 z-[9999] flex items-center gap-2">
             <Input
               type="text"
               placeholder="Search in PDF..."
@@ -902,7 +1053,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         )}
 
         {/* Navigation Bar at Bottom */}
-        <div className="absolute bottom-0 left-0 right-0 bg-card border-t border-border px-6 py-2 z-[9998]">
+        <div className="flex-shrink-0 bg-card border-t border-border px-6 py-2 rounded-b-lg">
           <TooltipProvider delayDuration={300}>
             <div className="flex items-center justify-center gap-3">
               {/* Search Button */}

@@ -8,6 +8,7 @@ interface ResizablePanelProps {
   defaultLeftWidth?: number
   minLeftWidth?: number
   maxLeftWidth?: number
+  hideRightPanel?: boolean
 }
 
 export function ResizablePanel({
@@ -15,7 +16,8 @@ export function ResizablePanel({
   rightPanel,
   defaultLeftWidth = 40,
   minLeftWidth = 20,
-  maxLeftWidth = 70
+  maxLeftWidth = 70,
+  hideRightPanel = false
 }: ResizablePanelProps) {
   const [leftWidth, setLeftWidth] = useState(defaultLeftWidth)
   const [isDragging, setIsDragging] = useState(false)
@@ -64,30 +66,46 @@ export function ResizablePanel({
   }, [isDragging, handleMouseMove, handleMouseUp])
 
   return (
-    <div ref={containerRef} className="flex h-full w-full overflow-hidden">
+    <div ref={containerRef} className="flex h-full w-full overflow-hidden transition-all duration-300 ease-in-out">
       {/* Left Panel */}
       <div
-        className="overflow-auto"
-        style={{ width: `${leftWidth}%` }}
+        className="overflow-auto transition-all duration-300 ease-in-out"
+        style={{ width: hideRightPanel ? '100%' : `${leftWidth}%` }}
       >
         {leftPanel}
       </div>
 
-      {/* Resizer */}
-      <div
-        className="relative w-1 bg-border hover:bg-primary/50 cursor-col-resize transition-colors flex-shrink-0"
-        onMouseDown={handleMouseDown}
-      >
-        <div className="absolute inset-y-0 -left-1 -right-1" />
-      </div>
+      {/* Resizer - only show when right panel is visible */}
+      {!hideRightPanel && (
+        <div
+          className="relative w-1 cursor-col-resize flex-shrink-0 group"
+          onMouseDown={handleMouseDown}
+        >
+          {/* Invisible hit area for easier grabbing */}
+          <div className="absolute inset-y-0 -left-2 -right-2" />
 
-      {/* Right Panel */}
-      <div
-        className="overflow-auto flex-1"
-        style={{ width: `${100 - leftWidth}%` }}
-      >
-        {rightPanel}
-      </div>
+          {/* Visible handle */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-1 h-12 bg-border rounded-full group-hover:bg-primary/70 transition-colors flex items-center justify-center">
+              <div className="flex flex-col gap-0.5">
+                <div className="w-0.5 h-0.5 bg-background rounded-full" />
+                <div className="w-0.5 h-0.5 bg-background rounded-full" />
+                <div className="w-0.5 h-0.5 bg-background rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right Panel - only show when not hidden */}
+      {!hideRightPanel && (
+        <div
+          className="overflow-auto flex-1 transition-all duration-300 ease-in-out"
+          style={{ width: `${100 - leftWidth}%` }}
+        >
+          {rightPanel}
+        </div>
+      )}
     </div>
   )
 }

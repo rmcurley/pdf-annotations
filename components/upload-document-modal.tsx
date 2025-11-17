@@ -4,29 +4,40 @@ import React, { useState, useCallback } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/auth-context'
+import * as pdfjsLib from 'pdfjs-dist'
 
 interface UploadDocumentModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  projects: Array<{ id: string; name: string }>
+  projectId: string
   onUploadComplete?: () => void
 }
 
 export function UploadDocumentModal({
   open,
   onOpenChange,
-  projects,
+  projectId,
   onUploadComplete
 }: UploadDocumentModalProps) {
-  const [file, setFile] = useState<File | null>(null)
-  const [documentName, setDocumentName] = useState('')
-  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const { user } = useAuth()
+  const supabase = createClient()
+  const [files, setFiles] = useState<File[]>([])
+  const [version, setVersion] = useState<'Draft' | 'Revised Draft' | 'Final'>('Draft')
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
+
+  // Configure PDF.js worker
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+    }
+  }, [])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -44,37 +55,67 @@ export function UploadDocumentModal({
     setDragActive(false)
     setError(null)
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0]
-      if (droppedFile.type === 'application/pdf') {
-        setFile(droppedFile)
-        if (!documentName) {
-          setDocumentName(droppedFile.name.replace('.pdf', ''))
-        }
-      } else {
-        setError('Please upload a PDF file')
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files)
+      const pdfFiles = droppedFiles.filter(file => file.type === 'application/pdf')
+
+      if (pdfFiles.length === 0) {
+        setError('Please upload PDF files only')
+        return
       }
+
+      if (pdfFiles.length !== droppedFiles.length) {
+        setError(`Only PDF files are allowed. ${pdfFiles.length} of ${droppedFiles.length} files will be uploaded.`)
+      }
+
+      setFiles(prev => [...prev, ...pdfFiles])
     }
-  }, [documentName])
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null)
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0]
-      if (selectedFile.type === 'application/pdf') {
-        setFile(selectedFile)
-        if (!documentName) {
-          setDocumentName(selectedFile.name.replace('.pdf', ''))
-        }
-      } else {
-        setError('Please upload a PDF file')
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files)
+      const pdfFiles = selectedFiles.filter(file => file.type === 'application/pdf')
+
+      if (pdfFiles.length === 0) {
+        setError('Please upload PDF files only')
+        return
       }
+
+      if (pdfFiles.length !== selectedFiles.length) {
+        setError(`Only PDF files are allowed. ${pdfFiles.length} of ${selectedFiles.length} files will be uploaded.`)
+      }
+
+      setFiles(prev => [...prev, ...pdfFiles])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+    setError(null)
+  }
+
+  const extractPageCount = async (file: File): Promise<number | null> => {
+    try {
+      // Read the file as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer()
+
+      // Load the PDF document
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+      const pdf = await loadingTask.promise
+
+      // Return the number of pages
+      return pdf.numPages
+    } catch (error) {
+      console.error('Error extracting page count:', error)
+      return null
     }
   }
 
   const handleUpload = async () => {
-    if (!file || !documentName || !selectedProjectId) {
-      setError('Please fill in all fields and select a file')
+    if (files.length === 0) {
+      setError('Please select at least one file')
       return
     }
 
@@ -82,59 +123,100 @@ export function UploadDocumentModal({
     setError(null)
 
     try {
-      // Get current user (optional for now)
       const { data: { user } } = await supabase.auth.getUser()
+      let successCount = 0
+      let errorCount = 0
 
-      // Generate unique filename
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${selectedProjectId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const documentName = file.name.replace('.pdf', '')
 
-      // Upload file to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('pdfs')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        })
+        setUploadProgress(`Uploading ${i + 1} of ${files.length}: ${documentName}`)
 
-      if (uploadError) throw uploadError
+        try {
+          // Check if a document with this name already exists in this project
+          const { data: existingDocs } = await supabase
+            .from('documents')
+            .select('id')
+            .eq('project_id', projectId)
+            .eq('name', documentName)
+            .limit(1)
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('pdfs')
-        .getPublicUrl(fileName)
+          if (existingDocs && existingDocs.length > 0) {
+            console.warn(`Skipping "${documentName}" - already exists`)
+            errorCount++
+            continue
+          }
 
-      // Get PDF metadata (you might want to use a library like pdf.js to get page count)
-      const fileSize = file.size
+          // Generate unique filename
+          const fileExt = file.name.split('.').pop()
+          const fileName = `${projectId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
 
-      // Insert document record
-      const { error: insertError } = await supabase
-        .from('documents')
-        .insert({
-          project_id: selectedProjectId,
-          name: documentName,
-          pdf_url: publicUrl,
-          file_size: fileSize,
-          page_count: null, // TODO: Extract page count from PDF
-          created_by: user?.id || null
-        })
+          // Upload file to Supabase Storage
+          const { error: uploadError } = await supabase.storage
+            .from('pdfs')
+            .upload(fileName, file, {
+              cacheControl: '3600',
+              upsert: false
+            })
 
-      if (insertError) throw insertError
+          if (uploadError) throw uploadError
+
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('pdfs')
+            .getPublicUrl(fileName)
+
+          // Get PDF metadata
+          const fileSize = file.size
+          const pageCount = await extractPageCount(file)
+
+          // Insert document record
+          const { error: insertError } = await supabase
+            .from('documents')
+            .insert({
+              project_id: projectId,
+              name: documentName,
+              file_name: file.name,
+              pdf_url: publicUrl,
+              file_size: fileSize,
+              page_count: pageCount,
+              version: version,
+              created_by: user?.id || null
+            })
+
+          if (insertError) throw insertError
+
+          successCount++
+        } catch (err: any) {
+          console.error(`Error uploading ${documentName}:`, err)
+          errorCount++
+        }
+      }
 
       // Reset form
-      setFile(null)
-      setDocumentName('')
-      setSelectedProjectId('')
-      onOpenChange(false)
+      setFiles([])
+      setVersion('Draft')
+      setUploadProgress('')
 
-      if (onUploadComplete) {
-        onUploadComplete()
+      if (successCount > 0) {
+        onOpenChange(false)
+        if (onUploadComplete) {
+          onUploadComplete()
+        }
+      }
+
+      if (errorCount > 0 && successCount > 0) {
+        setError(`${successCount} file(s) uploaded successfully, ${errorCount} failed`)
+      } else if (errorCount > 0) {
+        setError(`Failed to upload ${errorCount} file(s)`)
       }
     } catch (err: any) {
       console.error('Upload error:', err)
-      setError(err.message || 'Failed to upload document')
+      setError(err.message || 'Failed to upload documents')
     } finally {
       setUploading(false)
+      setUploadProgress('')
     }
   }
 
@@ -150,43 +232,28 @@ export function UploadDocumentModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Upload a document</DialogTitle>
+          <DialogTitle>Upload documents</DialogTitle>
           <DialogDescription>
-            Drag and drop a PDF file to upload to your project
+            Drag and drop PDF files or click to browse. Document names will be set automatically from file names.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Project Selection */}
+          {/* Version Tabs */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Project</label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a project" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Document Name */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Document name</label>
-            <Input
-              value={documentName}
-              onChange={(e) => setDocumentName(e.target.value)}
-              placeholder="Enter document name"
-            />
+            <label className="text-sm font-medium">Version</label>
+            <Tabs value={version} onValueChange={(value: any) => setVersion(value)}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="Draft">Draft</TabsTrigger>
+                <TabsTrigger value="Revised Draft">Revised Draft</TabsTrigger>
+                <TabsTrigger value="Final">Final</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* File Upload Area */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">PDF File</label>
+            <label className="text-sm font-medium">PDF Files</label>
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 dragActive
@@ -198,26 +265,34 @@ export function UploadDocumentModal({
               onDragOver={handleDrag}
               onDrop={handleDrop}
             >
-              {file ? (
+              {files.length > 0 ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-center gap-3">
                     <FileText className="w-10 h-10 text-primary" />
                   </div>
-                  <div>
-                    <p className="font-medium">{file.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatFileSize(file.size)}
-                    </p>
+                  <div className="text-left max-h-48 overflow-y-auto space-y-2">
+                    {files.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between bg-muted/50 p-2 rounded">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{file.name.replace('.pdf', '')}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatFileSize(file.size)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeFile(index)}
+                          className="ml-2 h-8 w-8 flex-shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setFile(null)}
-                    className="mt-2"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Remove
-                  </Button>
+                  <div className="text-sm text-muted-foreground">
+                    {files.length} file{files.length !== 1 ? 's' : ''} selected
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -225,7 +300,7 @@ export function UploadDocumentModal({
                     <Upload className="w-10 h-10 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="font-medium">Upload a PDF file</p>
+                    <p className="font-medium">Drop PDF files here</p>
                     <p className="text-sm text-muted-foreground">
                       or,{' '}
                       <label className="text-primary hover:underline cursor-pointer">
@@ -234,6 +309,7 @@ export function UploadDocumentModal({
                           type="file"
                           className="hidden"
                           accept="application/pdf"
+                          multiple
                           onChange={handleFileChange}
                         />
                       </label>
@@ -243,6 +319,13 @@ export function UploadDocumentModal({
               )}
             </div>
           </div>
+
+          {/* Upload Progress */}
+          {uploading && uploadProgress && (
+            <div className="bg-primary/10 text-primary text-sm p-3 rounded-md">
+              {uploadProgress}
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -257,14 +340,14 @@ export function UploadDocumentModal({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={uploading}>
             Cancel
           </Button>
-          <Button onClick={handleUpload} disabled={uploading || !file || !documentName || !selectedProjectId}>
+          <Button onClick={handleUpload} disabled={uploading || files.length === 0}>
             {uploading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Uploading...
               </>
             ) : (
-              'Upload'
+              `Upload ${files.length > 0 ? `(${files.length})` : ''}`
             )}
           </Button>
         </div>

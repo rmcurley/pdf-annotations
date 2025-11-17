@@ -2,9 +2,15 @@
 
 import React, { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/auth-context'
+import { AppSidebar } from '@/components/app-sidebar'
+import { SiteHeader } from '@/components/site-header'
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
+import { Card } from '@/components/ui/card'
 import { ResizablePanel } from '@/components/resizable-panel'
 import { CommentsPanel } from '@/components/comments-panel'
+import { CommentsTableModal } from '@/components/comments-table-modal'
 import { PdfViewerWrapper } from '@/components/pdf-viewer-wrapper'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -52,15 +58,25 @@ interface Comment {
   highlight_position: any
   created_at: string
   updated_at: string
+  user_id: string | null
+  users?: {
+    first_name: string | null
+    last_name: string | null
+    email: string
+  }
 }
 
 export default function DocumentPage() {
   const params = useParams()
   const router = useRouter()
+  const { user } = useAuth()
+  const supabase = createClient()
   const documentId = params.id as string
 
   const [document, setDocument] = useState<Document | null>(null)
   const [project, setProject] = useState<Project | null>(null)
+  const [allProjects, setAllProjects] = useState<Project[]>([])
+  const [allDocuments, setAllDocuments] = useState<{ id: string; name: string; project_id: string }[]>([])
   const [comments, setComments] = useState<Comment[]>([])
   const [highlights, setHighlights] = useState<IHighlight[]>([])
   const [filteredCommentIds, setFilteredCommentIds] = useState<string[]>([])
@@ -68,6 +84,7 @@ export default function DocumentPage() {
   const [scrollToPdfId, setScrollToPdfId] = useState<string | null>(null)
   const [scrollToCommentId, setScrollToCommentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [annotationsVisible, setAnnotationsVisible] = useState(true)
 
   // Filter state (lifted from CommentsPanel)
   const [searchQuery, setSearchQuery] = useState('')
@@ -75,11 +92,40 @@ export default function DocumentPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [userFilter, setUserFilter] = useState<string[]>([])
   const [userComboOpen, setUserComboOpen] = useState(false)
+  const [meMode, setMeMode] = useState(false)
+  const [tableViewOpen, setTableViewOpen] = useState(false)
+
+  // Get current user info
+  const currentUserName = user?.profile?.first_name && user?.profile?.last_name
+    ? `${user.profile.first_name} ${user.profile.last_name}`
+    : user?.email?.split('@')[0] || 'User'
+
+  const currentUserInitials = user?.profile?.first_name && user?.profile?.last_name
+    ? `${user.profile.first_name[0]}${user.profile.last_name[0]}`.toUpperCase()
+    : (user?.email?.[0] || 'U').toUpperCase()
 
   useEffect(() => {
     fetchDocument()
     fetchComments()
   }, [documentId])
+
+  // Separate effect for body overflow to ensure DOM is ready
+  useEffect(() => {
+    // Wait for next tick to ensure body is available
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.document?.body) {
+        window.document.body.style.overflow = 'hidden'
+      }
+    }, 0)
+
+    return () => {
+      clearTimeout(timer)
+      // Restore body scrolling when leaving page
+      if (typeof window !== 'undefined' && window.document?.body) {
+        window.document.body.style.overflow = ''
+      }
+    }
+  }, [])
 
   useEffect(() => {
     // Convert comments to highlights format, filtering by filteredCommentIds if set
@@ -98,6 +144,9 @@ export default function DocumentPage() {
         emoji: '',
         type: comment.comment_type,
         status: comment.comment_status,
+        user_name: comment.users?.first_name && comment.users?.last_name
+          ? `${comment.users.first_name} ${comment.users.last_name}`
+          : comment.users?.email?.split('@')[0] || 'Unknown User',
       } as any,
     }))
     setHighlights(newHighlights)
@@ -126,6 +175,26 @@ export default function DocumentPage() {
           setProject(projectData)
         }
       }
+
+      // Fetch all projects for sidebar
+      const { data: allProjectsData, error: allProjectsError } = await supabase
+        .from('projects')
+        .select('id, name')
+        .order('name')
+
+      if (!allProjectsError && allProjectsData) {
+        setAllProjects(allProjectsData)
+      }
+
+      // Fetch all documents for sidebar
+      const { data: allDocsData, error: allDocsError } = await supabase
+        .from('documents')
+        .select('id, name, project_id')
+        .order('name')
+
+      if (!allDocsError && allDocsData) {
+        setAllDocuments(allDocsData)
+      }
     } catch (error) {
       console.error('Error fetching document:', error)
     } finally {
@@ -135,16 +204,86 @@ export default function DocumentPage() {
 
   const fetchComments = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: commentsData, error } = await supabase
         .from('comments')
         .select('*')
         .eq('document_id', documentId)
         .order('created_at', { ascending: false })
 
+      if (error) {
+        console.error('Supabase error fetching comments:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+        throw error
+      }
+
+      // Fetch user data for comments that have a user_id
+      const userIds = [...new Set(commentsData?.map(c => c.user_id).filter(Boolean) || [])]
+      let usersMap = new Map()
+
+      if (userIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, first_name, last_name, email')
+          .in('id', userIds)
+
+        if (!usersError && usersData) {
+          usersData.forEach(user => {
+            usersMap.set(user.id, user)
+          })
+        }
+      }
+
+      // Join user data with comments
+      const commentsWithUsers = commentsData?.map(comment => ({
+        ...comment,
+        users: comment.user_id ? usersMap.get(comment.user_id) : undefined
+      })) || []
+
+      setComments(commentsWithUsers)
+    } catch (error: any) {
+      console.error('Error fetching comments:', {
+        message: error?.message,
+        stack: error?.stack
+      })
+      // Set empty comments array to prevent UI issues
+      setComments([])
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+
       if (error) throw error
-      setComments(data || [])
+
+      // Refresh comments list
+      await fetchComments()
     } catch (error) {
-      console.error('Error fetching comments:', error)
+      console.error('Error deleting comment:', error)
+    }
+  }
+
+  const handleUpdateAnnotation = async (commentId: string, updates: Partial<Comment>) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .update(updates)
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      // Refresh comments list
+      await fetchComments()
+    } catch (error) {
+      console.error('Error updating annotation:', error)
+      throw error
     }
   }
 
@@ -185,7 +324,7 @@ export default function DocumentPage() {
           comment_status: status,
           highlighted_text: highlight.content.text || null,
           highlight_position: highlight.position,
-          user_id: null, // Will be set when auth is added
+          user_id: user?.id || null,
         })
         .select()
         .single()
@@ -266,243 +405,87 @@ export default function DocumentPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between gap-6">
-            {/* Left: Breadcrumb */}
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink href="/" className="cursor-pointer">
-                    Home
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbLink
-                    href={project ? `/projects/${project.id}` : '/projects'}
-                    className="cursor-pointer"
-                  >
-                    {project?.name || 'Project'}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{document.name}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-
-            {/* Center: Search and Filter */}
-            <div className="flex-1 max-w-md mx-auto flex gap-2 items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search comments..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Filter className="w-4 h-4" />
-                    Filter
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="space-y-4">
-                    {/* Type Filter */}
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Type</label>
-                      <ButtonGroup>
-                        <Button
-                          variant={typeFilter === 'all' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setTypeFilter('all')}
-                        >
-                          All
-                        </Button>
-                        <Button
-                          variant={typeFilter === 'comment' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setTypeFilter('comment')}
-                        >
-                          Comment
-                        </Button>
-                        <Button
-                          variant={typeFilter === 'edit' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setTypeFilter('edit')}
-                        >
-                          Edit
-                        </Button>
-                      </ButtonGroup>
-                    </div>
-
-                    {/* Status Filter */}
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Status</label>
-                      <ButtonGroup>
-                        <Button
-                          variant={statusFilter === 'all' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setStatusFilter('all')}
-                        >
-                          All
-                        </Button>
-                        <Button
-                          variant={statusFilter === 'proposed' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setStatusFilter('proposed')}
-                        >
-                          Proposed
-                        </Button>
-                        <Button
-                          variant={statusFilter === 'accepted' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setStatusFilter('accepted')}
-                        >
-                          Accepted
-                        </Button>
-                        <Button
-                          variant={statusFilter === 'rejected' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setStatusFilter('rejected')}
-                        >
-                          Rejected
-                        </Button>
-                      </ButtonGroup>
-                    </div>
-
-                    {/* User Filter */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium">User</label>
-                        {userFilter.length > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto p-0 text-xs"
-                            onClick={() => setUserFilter([])}
-                          >
-                            Clear
-                          </Button>
-                        )}
-                      </div>
-
-                      <Popover open={userComboOpen} onOpenChange={setUserComboOpen}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between">
-                            {userFilter.length > 0
-                              ? `${userFilter.length} selected`
-                              : 'Select users...'}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-full p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search users..." />
-                            <CommandList>
-                              <CommandEmpty>No users found.</CommandEmpty>
-                              <CommandGroup>
-                                {['Robert Curley', 'Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'James Wilson', 'Lisa Anderson'].map((user) => (
-                                  <CommandItem
-                                    key={user}
-                                    onSelect={() => {
-                                      setUserFilter((current) =>
-                                        current.includes(user)
-                                          ? current.filter((u) => u !== user)
-                                          : [...current, user]
-                                      )
-                                    }}
-                                  >
-                                    <div className="flex items-center gap-2 flex-1">
-                                      <div className={`w-4 h-4 border rounded flex items-center justify-center ${
-                                        userFilter.includes(user) ? 'bg-primary border-primary' : ''
-                                      }`}>
-                                        {userFilter.includes(user) && (
-                                          <Check className="w-3 h-3 text-primary-foreground" />
-                                        )}
-                                      </div>
-                                      {user}
-                                    </div>
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-
-                      {/* Selected user badges */}
-                      {userFilter.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {userFilter.map((user) => (
-                            <Badge
-                              key={user}
-                              variant="secondary"
-                              className="text-xs gap-1 pr-1"
-                            >
-                              {user}
-                              <button
-                                onClick={() => setUserFilter((current) => current.filter((u) => u !== user))}
-                                className="hover:bg-muted-foreground/20 rounded p-0.5"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {/* Right: Comment count badge */}
-            <Badge variant="secondary" className="text-sm flex-shrink-0">
-              {comments.length} {comments.length === 1 ? 'Comment' : 'Comments'}
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content - Resizable Panels */}
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanel
-          leftPanel={
-            <PdfViewerWrapper
-              pdfUrl={document.pdf_url}
-              highlights={highlights}
-              onAddHighlight={handleAddHighlight}
-              scrollToHighlightId={scrollToPdfId}
-              selectedHighlightId={selectedCommentId}
-              onHighlightClick={handleHighlightClick}
-            />
-          }
-          rightPanel={
-            <CommentsPanel
-              comments={comments}
-              onCommentClick={handleCommentClick}
-              selectedCommentId={selectedCommentId}
-              scrollToCommentId={scrollToCommentId}
-              onFilterChange={setFilteredCommentIds}
-              searchQuery={searchQuery}
-              statusFilter={statusFilter}
-              typeFilter={typeFilter}
-              userFilter={userFilter}
-            />
-          }
-          defaultLeftWidth={70}
-          minLeftWidth={40}
-          maxLeftWidth={80}
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+      className="h-screen overflow-hidden"
+    >
+      <AppSidebar
+        variant="inset"
+        projects={allProjects}
+        documents={allDocuments}
+        currentProjectId={document?.project_id}
+      />
+      <SidebarInset className="flex flex-col overflow-hidden">
+        <SiteHeader
+          projectName={project?.name}
+          projectId={project?.id}
+          documentName={document?.name}
+          showAnnotationsToggle={true}
+          annotationsVisible={annotationsVisible}
+          onToggleAnnotations={() => setAnnotationsVisible(!annotationsVisible)}
+          showTableView={true}
+          onTableViewClick={() => setTableViewOpen(true)}
         />
-      </div>
-    </div>
+        <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+          <ResizablePanel
+            hideRightPanel={!annotationsVisible}
+              leftPanel={
+                <PdfViewerWrapper
+                  pdfUrl={document.pdf_url}
+                  highlights={highlights}
+                  onAddHighlight={handleAddHighlight}
+                  scrollToHighlightId={scrollToPdfId}
+                  selectedHighlightId={selectedCommentId}
+                  onHighlightClick={handleHighlightClick}
+                />
+              }
+              rightPanel={
+                <CommentsPanel
+                  comments={comments}
+                  onCommentClick={handleCommentClick}
+                  onEditClick={(comment) => {
+                    // TODO: Implement edit functionality
+                    console.log('Edit comment:', comment)
+                  }}
+                  onDeleteClick={(comment) => {
+                    handleDeleteComment(comment.id)
+                  }}
+                  onUpdateAnnotation={handleUpdateAnnotation}
+                  selectedCommentId={selectedCommentId}
+                  scrollToCommentId={scrollToCommentId}
+                  onFilterChange={setFilteredCommentIds}
+                  searchQuery={searchQuery}
+                  statusFilter={statusFilter}
+                  typeFilter={typeFilter}
+                  userFilter={userFilter}
+                  meMode={meMode}
+                  currentUser={currentUserName}
+                  onSearchChange={setSearchQuery}
+                  onStatusFilterChange={setStatusFilter}
+                  onTypeFilterChange={setTypeFilter}
+                  onUserFilterChange={setUserFilter}
+                  onMeModeChange={setMeMode}
+                />
+              }
+              defaultLeftWidth={70}
+              minLeftWidth={40}
+              maxLeftWidth={80}
+            />
+        </div>
+      </SidebarInset>
+
+      <CommentsTableModal
+        open={tableViewOpen}
+        onOpenChange={setTableViewOpen}
+        comments={comments}
+        onDelete={handleDeleteComment}
+        onUpdateAnnotation={handleUpdateAnnotation}
+      />
+    </SidebarProvider>
   )
 }

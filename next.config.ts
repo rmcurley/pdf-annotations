@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Add empty turbopack config to silence warning
+  turbopack: {},
   webpack: (config, { isServer }) => {
     // Ignore canvas module for client-side builds
     config.resolve.alias = {
