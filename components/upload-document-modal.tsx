@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
-import * as pdfjsLib from 'pdfjs-dist'
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf'
 
 interface UploadDocumentModalProps {
   open: boolean
@@ -37,7 +37,7 @@ export function UploadDocumentModal({
   // Configure PDF.js worker
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+      GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
     }
   }, [])
 
@@ -104,7 +104,7 @@ export function UploadDocumentModal({
       const arrayBuffer = await file.arrayBuffer()
 
       // Load the PDF document
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+      const loadingTask = getDocument({ data: arrayBuffer })
       const pdf = await loadingTask.promise
 
       // Return the number of pages
