@@ -9,7 +9,6 @@ import { Progress } from '@/components/ui/progress'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf'
 
 interface UploadDocumentModalProps {
   open: boolean
@@ -34,10 +33,20 @@ export function UploadDocumentModal({
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [progressPercent, setProgressPercent] = useState<number>(0)
 
-  // Configure PDF.js worker
+  const [pdfjsLib, setPdfjsLib] = React.useState<any | null>(null)
+
   React.useEffect(() => {
+    let mounted = true
     if (typeof window !== 'undefined') {
-      GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+      import('pdfjs-dist/legacy/build/pdf').then((pdfjs) => {
+        if (!mounted) return
+        pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+        setPdfjsLib(pdfjs)
+      })
+    }
+
+    return () => {
+      mounted = false
     }
   }, [])
 
@@ -104,7 +113,12 @@ export function UploadDocumentModal({
       const arrayBuffer = await file.arrayBuffer()
 
       // Load the PDF document
-      const loadingTask = getDocument({ data: arrayBuffer })
+      if (!pdfjsLib) {
+        setError('PDF parser not ready. Please try again in a moment.')
+        return
+      }
+
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
       const pdf = await loadingTask.promise
 
       // Return the number of pages
