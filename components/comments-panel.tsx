@@ -95,7 +95,7 @@ interface CommentsPanelProps {
   onCommentClick?: (comment: Comment) => void
   onEditClick?: (comment: Comment) => void
   onDeleteClick?: (comment: Comment) => void
-  onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => Promise<void>
+  onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => void | Promise<void>
   selectedCommentId?: string | null
   scrollToCommentId?: string | null
   onFilterChange?: (filteredIds: string[]) => void
