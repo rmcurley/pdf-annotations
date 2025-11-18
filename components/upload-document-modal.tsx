@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Progress } from '@/components/ui/progress'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
@@ -31,6 +32,7 @@ export function UploadDocumentModal({
   const [dragActive, setDragActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState<string>('')
+  const [progressPercent, setProgressPercent] = useState<number>(0)
 
   // Configure PDF.js worker
   React.useEffect(() => {
@@ -119,6 +121,7 @@ export function UploadDocumentModal({
       return
     }
 
+    // Validate prefix format if provided (uppercase letters and numbers only)
     setUploading(true)
     setError(null)
 
@@ -126,12 +129,17 @@ export function UploadDocumentModal({
       const { data: { user } } = await supabase.auth.getUser()
       let successCount = 0
       let errorCount = 0
+      const errorMessages: string[] = []
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         const documentName = file.name.replace('.pdf', '')
 
-        setUploadProgress(`Uploading ${i + 1} of ${files.length}: ${documentName}`)
+        // Update progress - truncate long document names to prevent modal expansion
+        const percent = Math.round(((i + 1) / files.length) * 100)
+        setProgressPercent(percent)
+        const truncatedName = documentName.length > 40 ? documentName.substring(0, 40) + '...' : documentName
+        setUploadProgress(`Uploading ${i + 1} of ${files.length}: ${truncatedName}`)
 
         try {
           // Check if a document with this name already exists in this project
@@ -144,6 +152,8 @@ export function UploadDocumentModal({
 
           if (existingDocs && existingDocs.length > 0) {
             console.warn(`Skipping "${documentName}" - already exists`)
+            const shortName = documentName.length > 50 ? documentName.substring(0, 50) + '...' : documentName
+            errorMessages.push(`"${shortName}" already exists`)
             errorCount++
             continue
           }
@@ -190,14 +200,18 @@ export function UploadDocumentModal({
           successCount++
         } catch (err: any) {
           console.error(`Error uploading ${documentName}:`, err)
+          const shortName = documentName.length > 50 ? documentName.substring(0, 50) + '...' : documentName
+          errorMessages.push(`"${shortName}": ${err.message || 'Upload failed'}`)
           errorCount++
         }
       }
 
       // Reset form
       setFiles([])
+      setDocumentPrefix('')
       setVersion('Draft')
       setUploadProgress('')
+      setProgressPercent(0)
 
       if (successCount > 0) {
         onOpenChange(false)
@@ -206,10 +220,16 @@ export function UploadDocumentModal({
         }
       }
 
-      if (errorCount > 0 && successCount > 0) {
-        setError(`${successCount} file(s) uploaded successfully, ${errorCount} failed`)
-      } else if (errorCount > 0) {
-        setError(`Failed to upload ${errorCount} file(s)`)
+      if (errorCount > 0) {
+        const errorSummary = errorMessages.length > 0
+          ? errorMessages.join('; ')
+          : `Failed to upload ${errorCount} file(s)`
+
+        if (successCount > 0) {
+          setError(`${successCount} file(s) uploaded successfully. Errors: ${errorSummary}`)
+        } else {
+          setError(errorSummary)
+        }
       }
     } catch (err: any) {
       console.error('Upload error:', err)
@@ -217,6 +237,7 @@ export function UploadDocumentModal({
     } finally {
       setUploading(false)
       setUploadProgress('')
+      setProgressPercent(0)
     }
   }
 
@@ -239,6 +260,7 @@ export function UploadDocumentModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+
           {/* Version Tabs */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Version</label>
@@ -272,10 +294,12 @@ export function UploadDocumentModal({
                   </div>
                   <div className="text-left max-h-48 overflow-y-auto space-y-2">
                     {files.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-muted/50 p-2 rounded">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{file.name.replace('.pdf', '')}</p>
-                          <p className="text-sm text-muted-foreground">
+                      <div key={index} className="flex items-start gap-2 bg-muted/50 p-2 rounded">
+                        <div className="flex-1 overflow-hidden">
+                          <p className="font-medium text-sm break-all line-clamp-2" title={file.name.replace('.pdf', '')}>
+                            {file.name.replace('.pdf', '')}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
                             {formatFileSize(file.size)}
                           </p>
                         </div>
@@ -283,7 +307,7 @@ export function UploadDocumentModal({
                           variant="ghost"
                           size="icon"
                           onClick={() => removeFile(index)}
-                          className="ml-2 h-8 w-8 flex-shrink-0"
+                          className="h-8 w-8 flex-shrink-0"
                         >
                           <X className="w-4 h-4" />
                         </Button>
@@ -322,8 +346,14 @@ export function UploadDocumentModal({
 
           {/* Upload Progress */}
           {uploading && uploadProgress && (
-            <div className="bg-primary/10 text-primary text-sm p-3 rounded-md">
-              {uploadProgress}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground truncate" title={uploadProgress}>
+                  {uploadProgress}
+                </span>
+                <span className="text-primary font-medium flex-shrink-0">{progressPercent}%</span>
+              </div>
+              <Progress value={progressPercent} className="h-2" />
             </div>
           )}
 

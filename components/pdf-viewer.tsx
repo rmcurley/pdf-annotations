@@ -22,10 +22,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { MessageSquarePlus, MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Save } from 'lucide-react'
+import { MessageSquarePlus, MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Loader2 } from 'lucide-react'
 import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { SearchInput } from '@/components/search-input'
+
+const HighlightWrapper = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
+>(({ onUpdate: _onUpdate, ...props }, ref) => (
+  <div ref={ref} {...props} />
+))
+HighlightWrapper.displayName = 'HighlightWrapper'
+
+const PopupContentWrapper = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
+>(({ onUpdate: _onUpdate, ...props }, ref) => (
+  <div ref={ref} {...props} />
+))
+PopupContentWrapper.displayName = 'PopupContentWrapper'
 
 interface PdfViewerProps {
   pdfUrl: string
@@ -39,6 +56,7 @@ interface PdfViewerProps {
 export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighlightId, selectedHighlightId, onHighlightClick }: PdfViewerProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [selectedHighlight, setSelectedHighlight] = useState<NewHighlight | null>(null)
+  const [draftHighlight, setDraftHighlight] = useState<IHighlight | null>(null)
   const [selectedText, setSelectedText] = useState('')
   const [pageNumber, setPageNumber] = useState(1)
   const [documentPageNumber, setDocumentPageNumber] = useState('')
@@ -48,6 +66,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [inlineAnnotationType, setInlineAnnotationType] = useState<'comment' | 'edit'>('comment')
   const [showInlineDetails, setShowInlineDetails] = useState(false)
   const [inlineAnnotationText, setInlineAnnotationText] = useState('')
+  const [inlineSaving, setInlineSaving] = useState(false)
   const [scale, setScale] = useState(100) // Zoom percentage (50% to 200%)
   const [scaleMode, setScaleMode] = useState<'custom' | 'page-fit' | 'page-width'>('custom')
   const [currentPage, setCurrentPage] = useState(1)
@@ -60,6 +79,8 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const pdfBookmarksRef = React.useRef<any[]>([])
   const pdfDocumentRef = React.useRef<any>(null)
   const totalPagesSetRef = React.useRef<boolean>(false)
+  const preservedScrollRef = React.useRef<{ pageNumber: number; offsetRatio: number } | null>(null)
+  const scrollRafRef = React.useRef<number | null>(null)
 
   // Scroll to highlight when scrollToHighlightId changes
   React.useEffect(() => {
@@ -174,119 +195,81 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     // window.location.hash = ''
   }
 
-  // Track current page from scroll position
+  // Track current page based on scroll position
   const updateCurrentPage = React.useCallback(() => {
-    // Find which page is currently in view
-    let pages = document.querySelectorAll('[data-page-number]')
-    console.log('Looking for pages with [data-page-number]:', pages.length)
-
-    if (pages.length === 0) {
-      pages = document.querySelectorAll('.react-pdf__Page')
-      console.log('Looking for pages with .react-pdf__Page:', pages.length)
-    }
-    if (pages.length === 0) {
-      pages = document.querySelectorAll('.page')
-      console.log('Looking for pages with .page:', pages.length)
-    }
-    if (pages.length === 0) {
-      console.log('No pages found!')
+    const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+    if (!container) {
       return
     }
 
-    const container = document.querySelector('.PdfHighlighter')
-    if (!container) {
-      console.log('No container found!')
+    const pages = container.querySelectorAll('[data-page-number]')
+    if (!pages.length) {
       return
     }
 
     const containerRect = container.getBoundingClientRect()
-    const containerMidpoint = containerRect.top + containerRect.height / 2
+    const viewportMidpoint = container.scrollTop + container.clientHeight / 2
 
-    // Find the page closest to the center of the viewport
-    let closestPage = 1
-    let closestDistance = Infinity
+    let detectedPage: number | null = null
+    let closestDistance = Number.POSITIVE_INFINITY
 
-    pages.forEach((page, index) => {
-      const pageRect = page.getBoundingClientRect()
-      const pageMidpoint = pageRect.top + pageRect.height / 2
-      const distance = Math.abs(pageMidpoint - containerMidpoint)
+    for (const page of Array.from(pages)) {
+      const pageEl = page as HTMLElement
+      const pageAttr = pageEl.getAttribute('data-page-number')
+      if (!pageAttr) continue
+      const pageNumber = parseInt(pageAttr, 10)
+      if (Number.isNaN(pageNumber)) continue
 
+      const rect = pageEl.getBoundingClientRect()
+      const pageTop = container.scrollTop + (rect.top - containerRect.top)
+      const pageHeight = rect.height || pageEl.offsetHeight || pageEl.clientHeight || 0
+      const pageBottom = pageTop + pageHeight
+      const pageCenter = pageTop + pageHeight / 2
+
+      if (viewportMidpoint >= pageTop && viewportMidpoint <= pageBottom) {
+        detectedPage = pageNumber
+        break
+      }
+
+      const distance = Math.abs(pageCenter - viewportMidpoint)
       if (distance < closestDistance) {
         closestDistance = distance
-        const pageNumber = page.getAttribute('data-page-number')
-        if (pageNumber) {
-          closestPage = parseInt(pageNumber, 10)
-        } else {
-          // Fallback to index + 1 if no data attribute
-          closestPage = index + 1
-        }
+        detectedPage = pageNumber
       }
-    })
+    }
 
-    console.log('Setting current page to:', closestPage)
-    setCurrentPage(closestPage)
+    if (detectedPage) {
+      setCurrentPage(prev => (detectedPage !== prev ? detectedPage : prev))
+    }
   }, [])
 
-  // Set up IntersectionObserver to track current page
   React.useEffect(() => {
-    console.log('Setting up page tracking with IntersectionObserver...')
-
-    const setupPageTracking = () => {
-      const pages = document.querySelectorAll('[data-page-number]')
-      console.log('Found pages for tracking:', pages.length)
-
-      if (pages.length === 0) {
-        return false
-      }
-
-      const observerOptions = {
-        root: document.querySelector('.PdfHighlighter'),
-        rootMargin: '-50% 0px -50% 0px',
-        threshold: 0
-      }
-
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const pageNum = entry.target.getAttribute('data-page-number')
-            if (pageNum) {
-              const num = parseInt(pageNum, 10)
-              console.log('Page in view:', num)
-              setCurrentPage(num)
-            }
-          }
-        })
-      }, observerOptions)
-
-      pages.forEach(page => observer.observe(page))
-      console.log('IntersectionObserver setup complete')
-
-      return () => {
-        console.log('Cleaning up IntersectionObserver')
-        observer.disconnect()
-      }
+    const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+    if (!container) {
+      return
     }
 
-    // Try multiple times with increasing delays
-    const timers: NodeJS.Timeout[] = []
-    let cleanup: (() => void) | undefined
+    const handleScroll = () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current)
+      }
+      scrollRafRef.current = window.requestAnimationFrame(() => {
+        updateCurrentPage()
+        scrollRafRef.current = null
+      })
+    }
 
-    const attempts = [500, 1000, 2000, 3000]
-    attempts.forEach(delay => {
-      const timer = setTimeout(() => {
-        if (!cleanup) {
-          console.log(`Attempting to setup page tracking (delay: ${delay}ms)`)
-          cleanup = setupPageTracking() || undefined
-        }
-      }, delay)
-      timers.push(timer)
-    })
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
 
     return () => {
-      timers.forEach(timer => clearTimeout(timer))
-      if (cleanup) cleanup()
+      container.removeEventListener('scroll', handleScroll)
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current)
+        scrollRafRef.current = null
+      }
     }
-  }, [totalPages])
+  }, [pdfUrl, totalPages, scale, scaleMode, updateCurrentPage])
 
   // Extract total pages when PDF is rendered
   React.useEffect(() => {
@@ -341,33 +324,66 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
+  const captureScrollPosition = React.useCallback(() => {
+    const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+    const pageElement = document.querySelector(`[data-page-number="${currentPage}"]`) as HTMLElement | null
+    if (!container || !pageElement) return
+
+    const offsetWithinPage = container.scrollTop - pageElement.offsetTop
+    const ratio = pageElement.clientHeight > 0 ? offsetWithinPage / pageElement.clientHeight : 0
+
+    preservedScrollRef.current = {
+      pageNumber: currentPage,
+      offsetRatio: Math.min(Math.max(ratio, 0), 1),
+    }
+  }, [currentPage])
+
   // Zoom control functions
   const handleZoomIn = () => {
+    const rounded = Math.round(scale / 10) * 10
+    const nextScale = Math.min(200, rounded + 10)
+    if (scaleMode === 'custom' && nextScale === scale) {
+      return
+    }
+    captureScrollPosition()
     setScaleMode('custom')
-    setScale(prev => {
-      const rounded = Math.round(prev / 10) * 10
-      return Math.min(200, rounded + 10)
-    })
+    setScale(nextScale)
   }
 
   const handleZoomOut = () => {
+    const rounded = Math.round(scale / 10) * 10
+    const nextScale = Math.max(50, rounded - 10)
+    if (scaleMode === 'custom' && nextScale === scale) {
+      return
+    }
+    captureScrollPosition()
     setScaleMode('custom')
-    setScale(prev => {
-      const rounded = Math.round(prev / 10) * 10
-      return Math.max(50, rounded - 10)
-    })
+    setScale(nextScale)
   }
 
   const handleSliderChange = (value: number[]) => {
+    const nextScale = value[0]
+    if (scaleMode === 'custom' && nextScale === scale) {
+      return
+    }
+    captureScrollPosition()
     setScaleMode('custom')
-    setScale(value[0])
+    setScale(nextScale)
   }
 
   const handlePageFit = () => {
+    if (scaleMode === 'page-fit') {
+      return
+    }
+    captureScrollPosition()
     setScaleMode('page-fit')
   }
 
   const handlePageWidth = () => {
+    if (scaleMode === 'page-width') {
+      return
+    }
+    captureScrollPosition()
     setScaleMode('page-width')
   }
 
@@ -379,6 +395,25 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     console.log('Scale value:', value, 'Mode:', scaleMode, 'Scale:', scale)
     return value
   }
+
+  React.useEffect(() => {
+    if (!preservedScrollRef.current) return
+
+    const state = preservedScrollRef.current
+    const timer = window.setTimeout(() => {
+      const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+      const pageElement = document.querySelector(`[data-page-number="${state.pageNumber}"]`) as HTMLElement | null
+
+      if (container && pageElement) {
+        const targetTop = pageElement.offsetTop + state.offsetRatio * Math.max(pageElement.clientHeight, 1)
+        container.scrollTo({ top: targetTop })
+      }
+
+      preservedScrollRef.current = null
+    }, 50)
+
+    return () => window.clearTimeout(timer)
+  }, [scale, scaleMode])
 
   // Page navigation functions
   const handleNextPage = () => {
@@ -414,8 +449,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value
+  const handleSearchChange = (query: string) => {
     setSearchQuery(query)
 
     // Remove previous highlights
@@ -553,29 +587,50 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
-  const handleInlineSave = () => {
-    if (selectedHighlight && inlineAnnotationText.trim()) {
-      // Save the annotation directly
-      onAddHighlight(
-        selectedHighlight,
-        inlineAnnotationText.trim(),
-        inlineAnnotationType,
-        'proposed', // Default status
-        sectionNumber,
+  const handleInlineSave = async () => {
+    if (!selectedHighlight || !inlineAnnotationText.trim() || inlineSaving) {
+      return
+    }
+
+    try {
+      setInlineSaving(true)
+      await Promise.resolve(
+        onAddHighlight(
+          selectedHighlight,
+          inlineAnnotationText.trim(),
+          inlineAnnotationType,
+          'proposed', // Default status
+          sectionNumber,
+        )
       )
 
-      // Clear state
+      // Clear state including draft highlight
       setShowAddButton(false)
       setSelectedHighlight(null)
+      setDraftHighlight(null)
       setInlineAnnotationText('')
       setShowInlineDetails(false)
       setInlineAnnotationType('comment')
+      setButtonPosition(null)
+      setSectionNumber('')
+      setDocumentPageNumber('')
+    } catch (error) {
+      console.error('Error saving inline annotation:', error)
+    } finally {
+      setInlineSaving(false)
     }
   }
 
   const handleSelectionComplete = (highlight: NewHighlight) => {
     setSelectedHighlight(highlight)
     setSelectedText(highlight.content.text || '')
+
+    // Create a temporary draft highlight so it stays visible while the user types
+    const tempId = `draft-${Date.now()}`
+    setDraftHighlight({
+      ...highlight,
+      id: tempId,
+    } as IHighlight)
 
     const pdfPageNumber = highlight.position.pageNumber || 1
     setPageNumber(pdfPageNumber)
@@ -594,8 +649,10 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       // Position button above the selection, centered
       setButtonPosition({
         x: rect.left + rect.width / 2,
-        y: rect.top - 10 // 10px above the selection
+        y: rect.top - 8
       })
+    } else {
+      setButtonPosition(null)
     }
 
     // Extract document-specific page number from the text layer
@@ -646,6 +703,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
     setSelectedHighlight(null)
     setSelectedText('')
+    setDraftHighlight(null)
+    setShowAddButton(false)
+    setInlineAnnotationText('')
+    setShowInlineDetails(false)
+    setButtonPosition(null)
+    setSectionNumber('')
+    setDocumentPageNumber(data.pageNumber.toString())
+    setDrawerOpen(false)
   }
 
   // Helper functions for popup styling
@@ -729,10 +794,26 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       />
     )
 
+    const highlightWrapper = (
+      <HighlightWrapper
+        key={highlight.id || index}
+        data-highlight-id={highlight.id}
+        className={isSelected ? 'custom-highlight-selected' : ''}
+      >
+        {component}
+      </HighlightWrapper>
+    )
+
+    // Skip preview popup for in-progress highlights (no comment text yet)
+    if (!highlight.comment?.text?.trim()) {
+      return highlightWrapper
+    }
+
     return (
       <Popup
+        key={`popup-${highlight.id || index}`}
         popupContent={
-          <div
+          <PopupContentWrapper
             className="bg-card border border-border rounded-lg p-3 shadow-xl text-sm max-w-sm cursor-pointer"
             onClick={() => {
               if (onHighlightClick && highlight.id) {
@@ -780,18 +861,13 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               <CircleUserRound className="w-3.5 h-3.5" />
               <span>{(highlight.comment as any)?.user_name || 'Unknown User'}</span>
             </div>
-          </div>
+          </PopupContentWrapper>
         }
         onMouseOver={(popupContent) => setTip(highlight, () => popupContent)}
         onMouseOut={hideTip}
         key={index}
       >
-        <div
-          data-highlight-id={highlight.id}
-          className={isSelected ? 'custom-highlight-selected' : ''}
-        >
-          {component}
-        </div>
+        {highlightWrapper}
       </Popup>
     )
   }
@@ -844,7 +920,10 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   pdfDocument={pdfDocument}
                   pdfScaleValue={getScaleValue()}
                   enableAreaSelection={(event) => event.altKey}
-                  onScrollChange={resetHash}
+                  onScrollChange={() => {
+                    resetHash()
+                    updateCurrentPage()
+                  }}
                   scrollRef={(scrollTo) => {
                     scrollToHighlightRef.current = scrollTo
                   }}
@@ -863,12 +942,13 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   }
 
                   handleSelectionComplete(newHighlight)
+                  // Clear the library's internal selection (we have our own draft highlight now)
                   hideTipAndSelection()
 
                   return <div />
                 }}
                 highlightTransform={highlightTransform}
-                highlights={highlights}
+                highlights={draftHighlight ? [...highlights, draftHighlight] : highlights}
               />
                 </div>
               )
@@ -887,24 +967,37 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             }}
           >
             <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[320px]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    Page {documentPageNumber || pageNumber}
+                  </Badge>
+                  {sectionNumber && (
+                    <Badge variant="secondary" className="text-xs max-w-[170px] truncate">
+                      {sectionNumber}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
               {/* Type Selection Icons */}
               <div className="flex gap-2 mb-2">
                 <Button
                   size="sm"
                   variant={inlineAnnotationType === 'comment' ? 'default' : 'outline'}
-                  className="flex-1"
+                  className="flex-1 text-xs"
                   onClick={() => setInlineAnnotationType('comment')}
                 >
-                  <MessageCircle className="w-4 h-4 mr-1" />
+                  <MessageSquarePlus className="w-3 h-3 mr-1" />
                   Comment
                 </Button>
                 <Button
                   size="sm"
                   variant={inlineAnnotationType === 'edit' ? 'default' : 'outline'}
-                  className="flex-1"
+                  className="flex-1 text-xs"
                   onClick={() => setInlineAnnotationType('edit')}
                 >
-                  <Pencil className="w-4 h-4 mr-1" />
+                  <Pencil className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
               </div>
@@ -912,16 +1005,28 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               {/* Quick Annotation Textarea */}
               <Textarea
                 className="inline-annotation-textarea text-sm mb-2 min-h-[80px] focus-visible:ring-0 focus-visible:ring-offset-0"
-                placeholder="Write your annotation..."
+                placeholder={
+                  inlineAnnotationType === 'comment'
+                    ? 'Add a comment about this text...'
+                    : 'Suggest an edit or alternative text...'
+                }
                 value={inlineAnnotationText}
                 onChange={(e) => setInlineAnnotationText(e.target.value)}
                 autoFocus
                 onKeyDown={(e) => {
+                  if (inlineSaving) {
+                    e.preventDefault()
+                    return
+                  }
                   if (e.key === 'Escape') {
                     setShowAddButton(false)
                     setSelectedHighlight(null)
+                    setDraftHighlight(null)
                     setInlineAnnotationText('')
                     setShowInlineDetails(false)
+                    setButtonPosition(null)
+                    setSectionNumber('')
+                    setDocumentPageNumber('')
                   } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                     // Quick save directly
                     e.preventDefault()
@@ -965,9 +1070,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   onClick={() => {
                     setShowAddButton(false)
                     setSelectedHighlight(null)
+                    setDraftHighlight(null)
                     setInlineAnnotationText('')
                     setShowInlineDetails(false)
+                    setButtonPosition(null)
+                    setSectionNumber('')
+                    setDocumentPageNumber('')
                   }}
+                  disabled={inlineSaving}
                 >
                   <Ban className="w-3 h-3 mr-1" />
                   Cancel
@@ -985,10 +1095,19 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   size="sm"
                   className="flex-1 text-xs"
                   onClick={handleInlineSave}
-                  disabled={!inlineAnnotationText.trim()}
+                  disabled={inlineSaving || !inlineAnnotationText.trim()}
                 >
-                  <Save className="w-3 h-3 mr-1" />
-                  Save
+                  {inlineSaving ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle className="w-3 h-3 mr-1" />
+                      Save
+                    </>
+                  )}
                 </Button>
               </div>
 
@@ -1002,12 +1121,12 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         {/* Search Bar (appears above navigation) */}
         {searchOpen && (
           <div className="absolute bottom-16 left-6 bg-card border border-border rounded-md shadow-lg p-2 z-[9999] flex items-center gap-2">
-            <Input
-              type="text"
-              placeholder="Search in PDF..."
+            <SearchInput
               value={searchQuery}
-              onChange={handleSearchChange}
-              className="h-7 w-64 text-sm"
+              onValueChange={handleSearchChange}
+              placeholder="Search in PDF..."
+              wrapperClassName="w-64"
+              className="h-7 text-sm"
               autoFocus
             />
             <div className="flex items-center gap-1">
@@ -1053,7 +1172,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         )}
 
         {/* Navigation Bar at Bottom */}
-        <div className="flex-shrink-0 bg-card border-t border-border px-6 py-2 rounded-b-lg">
+        <div className="flex-shrink-0 bg-card border-t border-border px-6 py-2 rounded-bl-lg">
           <TooltipProvider delayDuration={300}>
             <div className="flex items-center justify-center gap-3">
               {/* Search Button */}
@@ -1232,3 +1351,4 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     </>
   )
 }
+

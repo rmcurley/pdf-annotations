@@ -1,14 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { IconMail, IconTrash, IconPencil, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from "@tabler/icons-react"
+import { IconMail, IconTrash, IconPencil, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconDots } from "@tabler/icons-react"
+import { ChevronUp, ChevronDown } from "lucide-react"
 import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
   getSortedRowModel,
+  getFilteredRowModel,
   SortingState,
+  ColumnFiltersState,
   useReactTable,
 } from "@tanstack/react-table"
 
@@ -21,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { SearchInput } from "@/components/search-input"
 import { Label } from "@/components/ui/label"
 import {
   Table,
@@ -41,6 +45,12 @@ import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { EditUserModal } from "@/components/edit-user-modal"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface AdminModalProps {
   open: boolean
@@ -75,21 +85,81 @@ function createColumns(
   return [
     {
       accessorKey: "first_name",
-      header: "First Name",
+      enableSorting: true,
+      header: ({ column }) => (
+        <div
+          className="flex items-center gap-2 cursor-pointer select-none"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          <span>First Name</span>
+          <div className="flex flex-col">
+            <ChevronUp
+              className={`h-3 w-3 -mb-1 ${
+                column.getIsSorted() === "asc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+            <ChevronDown
+              className={`h-3 w-3 ${
+                column.getIsSorted() === "desc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+          </div>
+        </div>
+      ),
       cell: ({ row }) => (
         <div className="font-medium">{row.getValue("first_name") || '-'}</div>
       ),
     },
     {
       accessorKey: "last_name",
-      header: "Last Name",
+      enableSorting: true,
+      header: ({ column }) => (
+        <div
+          className="flex items-center gap-2 cursor-pointer select-none"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          <span>Last Name</span>
+          <div className="flex flex-col">
+            <ChevronUp
+              className={`h-3 w-3 -mb-1 ${
+                column.getIsSorted() === "asc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+            <ChevronDown
+              className={`h-3 w-3 ${
+                column.getIsSorted() === "desc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+          </div>
+        </div>
+      ),
       cell: ({ row }) => (
         <div className="font-medium">{row.getValue("last_name") || '-'}</div>
       ),
     },
     {
       accessorKey: "email",
-      header: "Email",
+      enableSorting: true,
+      header: ({ column }) => (
+        <div
+          className="flex items-center gap-2 cursor-pointer select-none"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          <span>Email</span>
+          <div className="flex flex-col">
+            <ChevronUp
+              className={`h-3 w-3 -mb-1 ${
+                column.getIsSorted() === "asc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+            <ChevronDown
+              className={`h-3 w-3 ${
+                column.getIsSorted() === "desc" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            />
+          </div>
+        </div>
+      ),
       cell: ({ row }) => <div>{row.getValue("email")}</div>,
     },
     {
@@ -109,23 +179,27 @@ function createColumns(
     {
       id: "actions",
       cell: ({ row }) => (
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleStartEdit(row.original)}
-            className="h-8 w-8"
-          >
-            <IconPencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleDeleteUser(row.original.id)}
-            className="h-8 w-8"
-          >
-            <IconTrash className="h-4 w-4 text-destructive" />
-          </Button>
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <IconDots className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleStartEdit(row.original)}>
+                <IconPencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleDeleteUser(row.original.id)}
+                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+              >
+                <IconTrash className="mr-2 h-4 w-4 text-destructive" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -139,6 +213,8 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const [inviteEmail, setInviteEmail] = React.useState("")
   const [inviting, setInviting] = React.useState(false)
   const [sorting, setSorting] = React.useState<SortingState>([])
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+  const [globalFilter, setGlobalFilter] = React.useState("")
 
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false)
@@ -274,11 +350,16 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
     data: users,
     columns,
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     state: {
       sorting,
+      columnFilters,
+      globalFilter,
     },
   })
 
@@ -320,6 +401,17 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
               {inviting ? 'Sending...' : 'Invite User'}
             </Button>
           </form>
+        </div>
+
+        {/* Search Users */}
+        <div className="flex items-center gap-2">
+          <SearchInput
+            value={globalFilter ?? ""}
+            onValueChange={(value) => setGlobalFilter(value)}
+            placeholder="Search users..."
+            wrapperClassName="max-w-sm w-full"
+            className="h-9"
+          />
         </div>
 
         {/* Users Table */}
@@ -456,3 +548,4 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
     </>
   )
 }
+// Updated: Added search, sortable columns with always-visible chevrons (matching documents table), and kebab menu with red delete styling

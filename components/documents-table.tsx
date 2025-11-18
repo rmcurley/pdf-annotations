@@ -45,15 +45,19 @@ import {
   IconLayoutColumns,
   IconPlus,
 } from "@tabler/icons-react"
-import { CircleCheck, CircleHelp, CircleX, ChevronUp, ChevronDown, Plus, Check, X, Pencil, Trash2 } from "lucide-react"
+import { CircleCheck, CircleHelp, CircleX, ChevronUp, ChevronDown, Plus, Check, X, Pencil, Trash2, Table as TableIcon, Download } from "lucide-react"
 import { z } from "zod"
 
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useAuth } from "@/contexts/auth-context"
+import { cn } from "@/lib/utils"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { SearchInput } from "@/components/search-input"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -84,6 +88,7 @@ import {
 export const documentSchema = z.object({
   id: z.string(),
   name: z.string(),
+  pdf_url: z.string().optional(),
   page_count: z.number().nullable(),
   file_size: z.number().nullable(),
   version: z.enum(['Draft', 'Revised Draft', 'Final']).default('Draft'),
@@ -100,6 +105,7 @@ type DocumentsTableMeta = {
   editedName: string
   editedPageCount: string
   editedVersion: 'Draft' | 'Revised Draft' | 'Final'
+  saving: boolean
   setEditingRowId: (id: string | null) => void
   setEditedName: (value: string) => void
   setEditedPageCount: (value: string) => void
@@ -128,16 +134,23 @@ function DragHandle({ id }: { id: string }) {
   })
 
   return (
-    <Button
-      {...attributes}
-      {...listeners}
-      variant="ghost"
-      size="icon"
-      className="text-muted-foreground size-7 hover:bg-transparent"
-    >
-      <IconGripVertical className="text-muted-foreground size-3" />
-      <span className="sr-only">Drag to reorder</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          {...attributes}
+          {...listeners}
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground size-7 hover:bg-transparent"
+        >
+          <IconGripVertical className="text-muted-foreground size-3" />
+          <span className="sr-only">Drag to reorder</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>Drag to reorder</p>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -187,7 +200,7 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
         // Then fetch user details for those members
         const { data: users, error: usersError } = await supabase
           .from('users')
-          .select('id, email, first_name, last_name')
+          .select('id, email, first_name, last_name, avatar_url')
           .in('id', userIds)
           .order('first_name')
 
@@ -235,19 +248,20 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <div className="flex items-center gap-2 cursor-pointer" onClick={(e) => e.stopPropagation()}>
-          {reviewers.length > 0 ? (
+          {reviewers.length > 0 && displayUsers.length > 0 ? (
             <div className="flex -space-x-2">
               {displayUsers.slice(0, 2).map((user) => (
                 <Avatar key={user.id} className="size-6 border-2 border-background">
+                  <AvatarImage src={user.avatar_url || undefined} alt={getUserInitials(user)} />
                   <AvatarFallback className="text-[10px]">
                     {getUserInitials(user)}
                   </AvatarFallback>
                 </Avatar>
               ))}
-              {reviewers.length > 2 && (
+              {displayUsers.length > 2 && (
                 <Avatar className="size-6 border-2 border-background">
                   <AvatarFallback className="text-[10px]">
-                    +{reviewers.length - 2}
+                    +{displayUsers.length - 2}
                   </AvatarFallback>
                 </Avatar>
               )}
@@ -429,12 +443,13 @@ const createColumns = (): ColumnDef<DocumentRow>[] => {
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <div
-          className="font-medium cursor-pointer hover:underline"
+        <Button
+          variant="link"
+          className="p-0 font-medium"
           onClick={() => meta.router.push(`/documents/${row.original.id}`)}
         >
           {row.original.name}
-        </div>
+        </Button>
       )
     },
     enableHiding: false,
@@ -517,50 +532,99 @@ const createColumns = (): ColumnDef<DocumentRow>[] => {
     },
     {
       id: "actions",
-      size: 80,
-      maxSize: 80,
+      size: 50,
+      maxSize: 50,
       cell: ({ row, table }) => {
         const meta = table.options.meta as DocumentsTableMeta
         const isEditing = meta.editingRowId === row.original.id
 
         return isEditing ? (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-              onClick={meta.handleSaveEdit}
-            >
-              <Check className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-muted-foreground hover:text-foreground"
-              onClick={meta.handleCancelEdit}
-            >
-              <X className="size-4" />
-            </Button>
+          <div className="flex justify-end items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                  onClick={meta.handleSaveEdit}
+                  disabled={meta.saving}
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Save</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={meta.handleCancelEdit}
+                  disabled={meta.saving}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Cancel</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         ) : (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-muted-foreground hover:text-foreground"
-              onClick={() => meta.handleStartEdit(row.original)}
-            >
-              <Pencil className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 text-destructive hover:bg-destructive/10"
-              onClick={() => meta.onDelete(row.original.id)}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <IconDotsVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {row.original.pdf_url && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const link = document.createElement('a')
+                    link.href = row.original.pdf_url!
+                    link.download = `${row.original.name}.pdf`
+                    link.target = '_blank'
+                    document.body.appendChild(link)
+                    link.click()
+                    document.body.removeChild(link)
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  meta.handleStartEdit(row.original)
+                }}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  meta.onDelete(row.original.id)
+                }}
+                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4 mr-2 text-destructive" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )
       },
     },
@@ -571,6 +635,7 @@ interface DocumentsTableProps {
   data: DocumentRow[]
   projectId: string
   onAddDocument?: () => void
+  onTableView?: () => void
   onReviewersChange?: (documentId: string, newReviewers: string[]) => void
   onUpdateDocument?: (documentId: string, updates: { name?: string; page_count?: number | null }) => void
   onDeleteDocument?: (documentId: string) => void
@@ -623,9 +688,10 @@ function DraggableRow({
   )
 }
 
-export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChange, onUpdateDocument, onDeleteDocument }: DocumentsTableProps) {
+export function DocumentsTable({ data, projectId, onAddDocument, onTableView, onReviewersChange, onUpdateDocument, onDeleteDocument }: DocumentsTableProps) {
   const router = useRouter()
   const isMobile = useIsMobile()
+  const { user } = useAuth()
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
@@ -636,6 +702,22 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
   const [editedPageCount, setEditedPageCount] = React.useState('')
   const [editedVersion, setEditedVersion] = React.useState<'Draft' | 'Revised Draft' | 'Final'>('Draft')
   const [globalFilter, setGlobalFilter] = React.useState('')
+  const [saving, setSaving] = React.useState(false)
+  const [showMyAssignments, setShowMyAssignments] = React.useState(false)
+
+  const userDisplayName = React.useMemo(() => {
+    if (user?.profile?.first_name && user.profile?.last_name) {
+      return `${user.profile.first_name} ${user.profile.last_name}`
+    }
+    return user?.email || "User"
+  }, [user])
+
+  const userInitials = React.useMemo(() => {
+    if (user?.profile?.first_name && user.profile?.last_name) {
+      return `${user.profile.first_name[0]}${user.profile.last_name[0]}`.toUpperCase()
+    }
+    return (user?.email?.[0] || "U").toUpperCase()
+  }, [user])
 
   React.useEffect(() => {
     setItems(data)
@@ -712,29 +794,44 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
     setItems(prevItems =>
       prevItems.map(item =>
         item.id === editingRowId
-          ? { ...item, name: editedName, page_count: pageCount, version: editedVersion }
-          : item
-      )
+          ? {
+              ...item,
+              name: editedName,
+              page_count: pageCount,
+              version: editedVersion,
+            }
+          : item,
+      ),
     )
 
     // Update in database
     try {
+      setSaving(true)
       const supabase = createClient()
       const { error } = await supabase
         .from('documents')
-        .update({ name: editedName, page_count: pageCount, version: editedVersion })
+        .update({
+          name: editedName,
+          page_count: pageCount,
+          version: editedVersion,
+        })
         .eq('id', editingRowId)
 
       if (error) throw error
 
       // Call parent handler if provided
       if (onUpdateDocument) {
-        onUpdateDocument(editingRowId, { name: editedName, page_count: pageCount })
+        onUpdateDocument(editingRowId, {
+          name: editedName,
+          page_count: pageCount,
+        })
       }
     } catch (err) {
       console.error('Error updating document:', err)
       // Revert on error
       setItems(data)
+    } finally {
+      setSaving(false)
     }
 
     setEditingRowId(null)
@@ -776,8 +873,21 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
     }
   }
 
+  React.useEffect(() => {
+    if (!user?.id) {
+      setShowMyAssignments(false)
+    }
+  }, [user?.id])
+
+  const displayedItems = React.useMemo(() => {
+    if (showMyAssignments && user?.id) {
+      return items.filter((item) => item.reviewers?.includes(user.id))
+    }
+    return items
+  }, [items, showMyAssignments, user?.id])
+
   const table = useReactTable({
-    data: items,
+    data: displayedItems,
     columns: tableColumns,
     state: {
       sorting,
@@ -804,6 +914,7 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
       editedName,
       editedPageCount,
       editedVersion,
+      saving,
       setEditingRowId,
       setEditedName,
       setEditedPageCount,
@@ -822,12 +933,45 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
     <div className="px-4 lg:px-6">
       <div className="@container/table">
         <div className="flex items-center justify-between gap-4 py-4 md:py-6">
-          <Input
-            placeholder="Filter documents..."
-            value={globalFilter ?? ""}
-            onChange={(event) => setGlobalFilter(event.target.value)}
-            className="max-w-sm"
-          />
+          <div className="flex items-center gap-3">
+            <SearchInput
+              value={globalFilter ?? ""}
+              onValueChange={setGlobalFilter}
+              placeholder="Search documents..."
+              wrapperClassName="w-[420px] max-w-xl"
+              className="h-9"
+            />
+            {user && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-pressed={showMyAssignments}
+                    onClick={() => user?.id && setShowMyAssignments((prev) => !prev)}
+                    className={cn(
+                      "flex items-center justify-center rounded-full border-2 transition-all disabled:opacity-50 disabled:pointer-events-none outline-none focus-visible:outline-none",
+                      showMyAssignments
+                        ? "border-primary/70"
+                        : "border-transparent hover:border-muted-foreground/40"
+                    )}
+                    disabled={!user?.id}
+                  >
+                    <Avatar className="size-8 border-2 border-background">
+                      {user.profile?.avatar_url && (
+                        <AvatarImage src={user.profile.avatar_url} alt={userDisplayName} />
+                      )}
+                      <AvatarFallback className="text-xs">
+                        {userInitials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{showMyAssignments ? "Showing your assignments" : "Show only documents I'm reviewing"}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
           <div className="flex gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -861,6 +1005,15 @@ export function DocumentsTable({ data, projectId, onAddDocument, onReviewersChan
                   })}
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              className="h-8 gap-2"
+              size="sm"
+              variant="outline"
+              onClick={onTableView}
+            >
+              <TableIcon className="size-3.5" />
+              Table View
+            </Button>
             <Button
               className="h-8 gap-2"
               size="sm"

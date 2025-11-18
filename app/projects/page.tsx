@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
 import { toast } from 'sonner'
@@ -25,12 +26,14 @@ interface Project {
   description: string | null
   created_by: string
   created_at: string
+  archived: boolean
 }
 
 interface Document {
   id: string
   project_id: string
   name: string
+  page_count: number | null
   created_at: string
 }
 
@@ -60,6 +63,11 @@ export default function ProjectsPage() {
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -107,7 +115,7 @@ export default function ProjectsPage() {
       const accessibleProjectIds = projectsData?.map(p => p.id) || []
       let docsQuery = supabase
         .from('documents')
-        .select('id, name, project_id, created_at')
+        .select('id, name, project_id, page_count, created_at')
         .order('name')
 
       if (accessibleProjectIds.length > 0) {
@@ -159,6 +167,7 @@ export default function ProjectsPage() {
     }
 
     try {
+      setCreating(true)
       const { data, error } = await supabase
         .from('projects')
         .insert({
@@ -179,11 +188,14 @@ export default function ProjectsPage() {
     } catch (error: any) {
       console.error('Error creating project:', error)
       toast.error(error.message || 'Failed to create project')
+    } finally {
+      setCreating(false)
     }
   }
 
   const handleUpdateProject = async (projectId: string, updates: { name?: string }) => {
     try {
+      setUpdating(true)
       const { error } = await supabase
         .from('projects')
         .update(updates)
@@ -196,6 +208,8 @@ export default function ProjectsPage() {
     } catch (error: any) {
       console.error('Error updating project:', error)
       toast.error(error.message || 'Failed to update project')
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -211,6 +225,7 @@ export default function ProjectsPage() {
 
     if (confirm(message)) {
       try {
+        setDeleting(true)
         const { error } = await supabase
           .from('projects')
           .delete()
@@ -223,12 +238,40 @@ export default function ProjectsPage() {
       } catch (error: any) {
         console.error('Error deleting project:', error)
         toast.error(error.message || 'Failed to delete project')
+      } finally {
+        setDeleting(false)
       }
     }
   }
 
+  const handleArchiveProject = async (projectId: string, archived: boolean) => {
+    try {
+      setArchiving(true)
+      const { error } = await supabase
+        .from('projects')
+        .update({ archived })
+        .eq('id', projectId)
+
+      if (error) throw error
+
+      toast.success(archived ? 'Project archived successfully!' : 'Project unarchived successfully!')
+      fetchData()
+    } catch (error: any) {
+      console.error('Error archiving project:', error)
+      toast.error(error.message || 'Failed to archive project')
+    } finally {
+      setArchiving(false)
+    }
+  }
+
+  // Filter projects based on archived state
+  const filteredProjects = showArchived ? projects : projects.filter(p => !p.archived)
+
+  // Check if current user is admin
+  const isAdmin = user?.profile?.role === 'admin'
+
   // Transform projects to include counts and ownership
-  const projectsWithCounts: ProjectRow[] = projects.map(project => {
+  const projectsWithCounts: ProjectRow[] = filteredProjects.map(project => {
     const projectDocs = allDocuments.filter(doc => doc.project_id === project.id)
     const docIds = projectDocs.map(doc => doc.id)
     const projectComments = allComments.filter(comment => docIds.includes(comment.document_id))
@@ -238,20 +281,19 @@ export default function ProjectsPage() {
     const approvedCount = projectComments.filter(c => c.comment_status?.toLowerCase() === 'accepted').length
     const rejectedCount = projectComments.filter(c => c.comment_status?.toLowerCase() === 'rejected').length
 
-    // Check if current user is owner
-    const membership = projectMembers.find(
-      pm => pm.project_id === project.id && pm.user_id === user?.id
-    )
-    const isOwner = membership?.role === 'owner'
+    // Calculate total pages across all documents
+    const totalPages = projectDocs.reduce((sum, doc) => sum + (doc.page_count || 0), 0)
 
     return {
       id: project.id,
       name: project.name,
       document_count: projectDocs.length,
+      total_pages: totalPages,
       proposed_count: proposedCount,
       approved_count: approvedCount,
       rejected_count: rejectedCount,
-      is_owner: isOwner,
+      is_owner: isAdmin, // Only admins can archive/edit/delete projects
+      archived: project.archived,
     }
   })
 
@@ -321,6 +363,20 @@ export default function ProjectsPage() {
               <div className="px-4 lg:px-6">
                 <ChartAreaInteractive data={chartData} />
               </div>
+              {isAdmin && (
+                <div className="px-4 lg:px-6">
+                  <div className="flex items-center gap-2 py-2">
+                    <Switch
+                      id="show-archived"
+                      checked={showArchived}
+                      onCheckedChange={setShowArchived}
+                    />
+                    <Label htmlFor="show-archived" className="cursor-pointer text-sm font-medium">
+                      Show archived projects
+                    </Label>
+                  </div>
+                </div>
+              )}
               {loading ? (
                 <div className="px-4 lg:px-6 text-center py-12 text-muted-foreground">
                   Loading projects...
@@ -331,6 +387,7 @@ export default function ProjectsPage() {
                   onAddProject={() => setCreateProjectOpen(true)}
                   onUpdateProject={handleUpdateProject}
                   onDeleteProject={handleDeleteProject}
+                  onArchiveProject={handleArchiveProject}
                 />
               )}
             </div>
@@ -377,8 +434,8 @@ export default function ProjectsPage() {
             <Button variant="outline" onClick={() => setCreateProjectOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateProject}>
-              Create Project
+            <Button onClick={handleCreateProject} disabled={creating}>
+              {creating ? 'Creating...' : 'Create Project'}
             </Button>
           </DialogFooter>
         </DialogContent>

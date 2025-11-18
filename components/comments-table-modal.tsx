@@ -8,7 +8,6 @@ import {
   useReactTable,
   getSortedRowModel,
   SortingState,
-  ColumnFiltersState,
   getFilteredRowModel,
   getPaginationRowModel,
 } from "@tanstack/react-table"
@@ -22,7 +21,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsRight,
-  ChevronDown,
   Check,
   X,
   CircleCheck,
@@ -38,8 +36,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { ButtonGroup } from "@/components/ui/button-group"
-import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -48,7 +44,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu,
@@ -74,27 +69,38 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { DataTableFilter, useDataTableFilters } from "@/components/data-table-filter"
+import { SearchInput } from "@/components/search-input"
+import {
+  commentFilterColumnsConfig,
+  filterCommentsByActiveFilters,
+  normalizeCommentsForFiltering,
+} from "@/lib/comment-filter-config"
+import { getCommentUserDisplayName } from "@/lib/comment-utils"
 
 interface Comment {
   id: string
+  annotation_id?: string | null
   comment_type: string
   comment_status: string
   highlighted_text: string | null
   comment: string
+  section_number?: string | null
+  page_number?: number | null
+  created_at?: string
   users?: {
     first_name: string | null
     last_name: string | null
     email: string
+    avatar_url?: string | null
   }
+  _filter_user?: string
 }
 
 interface CommentsTableModalProps {
@@ -103,6 +109,8 @@ interface CommentsTableModalProps {
   comments: Comment[]
   onDelete?: (commentId: string) => void
   onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => void
+  projectName?: string
+  documentName?: string
 }
 
 type CommentsTableMeta = {
@@ -149,22 +157,36 @@ function EditableCommentCell({
           }}
         />
         <div className="flex gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-            onClick={onSave}
-          >
-            <Check className="size-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 text-muted-foreground hover:text-foreground"
-            onClick={onCancel}
-          >
-            <X className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                onClick={onSave}
+              >
+                <Check className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Save</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 text-muted-foreground hover:text-foreground"
+                onClick={onCancel}
+              >
+                <X className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Cancel</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
     )
@@ -183,24 +205,62 @@ function EditableCommentCell({
  */
 const columns: ColumnDef<Comment>[] = [
   {
-    accessorKey: "id",
+    accessorKey: "annotation_id",
     header: "ID",
-    cell: ({ row }) => (
-      <div className="font-mono text-xs text-muted-foreground">
-        {row.original.id.slice(0, 8)}...
-      </div>
-    ),
+    cell: ({ row }) => {
+      const annotationId = row.original.annotation_id
+      return (
+        <div className="text-sm font-medium">
+          {annotationId || (
+            <span className="text-muted-foreground italic">
+              {row.original.id.slice(0, 8)}...
+            </span>
+          )}
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "location",
+    header: "Location",
+    cell: ({ row }) => {
+      const sectionNumber = row.original.section_number
+      const pageNumber = row.original.page_number
+
+      return (
+        <div className="text-sm">
+          {sectionNumber && (
+            <div className="font-medium">{sectionNumber}</div>
+          )}
+          {pageNumber && (
+            <div className="text-muted-foreground">Page {pageNumber}</div>
+          )}
+          {!sectionNumber && !pageNumber && (
+            <span className="text-muted-foreground italic">-</span>
+          )}
+        </div>
+      )
+    },
   },
   {
     accessorKey: "comment_type",
-    header: "Type",
+    header: () => <div className="text-center">Type</div>,
     cell: ({ row }) => {
-      const type = row.original.comment_type.toLowerCase()
+      const type = row.original.comment_type
       const TypeIcon = type === "edit" ? Pencil : MessageCircle
+      const typeLabel = type === "edit" ? "Edit" : "Comment"
       return (
-        <div className="flex items-center gap-2">
-          <TypeIcon className="w-4 h-4" />
-          <span className="capitalize">{type}</span>
+        <div className="flex items-center justify-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <TypeIcon className="w-4 h-4" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{typeLabel}</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       )
     },
@@ -209,7 +269,7 @@ const columns: ColumnDef<Comment>[] = [
     accessorKey: "comment_status",
     header: "Status",
     cell: ({ row }) => {
-      const status = row.original.comment_status.toLowerCase()
+      const status = row.original.comment_status
 
       if (status === 'accepted') {
         return (
@@ -237,6 +297,44 @@ const columns: ColumnDef<Comment>[] = [
     },
   },
   {
+    id: "user",
+    accessorFn: (row) => getCommentUserDisplayName(row),
+    header: "User",
+    cell: ({ row }) => {
+      const user = row.original.users
+      const firstName = user?.first_name || ""
+      const lastName = user?.last_name || ""
+      const email = user?.email || ""
+      const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || email.charAt(0).toUpperCase()
+      const fullName = firstName && lastName ? `${firstName} ${lastName}` : email.split("@")[0]
+
+      // Format created_at date
+      const createdAt = row.original.created_at
+      const dateStr = createdAt ? new Date(createdAt).toLocaleString() : ""
+
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center">
+              <Avatar className="size-8">
+                {user?.avatar_url && (
+                  <AvatarImage src={user.avatar_url} alt={fullName} />
+                )}
+                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+              </Avatar>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="text-center">
+              <p className="font-medium">{fullName}</p>
+              {dateStr && <p className="text-xs text-muted-foreground">{dateStr}</p>}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      )
+    },
+  },
+  {
     accessorKey: "highlighted_text",
     header: "Selected Text",
     cell: ({ row }) => (
@@ -251,7 +349,7 @@ const columns: ColumnDef<Comment>[] = [
   },
   {
     accessorKey: "comment",
-    header: "Comment",
+    header: () => "Comment/Edit",
     cell: ({ row, table }) => {
       const meta = table.options.meta as CommentsTableMeta
       const comment = row.original
@@ -271,10 +369,11 @@ const columns: ColumnDef<Comment>[] = [
   },
   {
     id: "actions",
-    header: "Actions",
+    header: "",
+    size: 50,
     cell: ({ row, table }) => {
       const comment = row.original
-      const currentStatus = comment.comment_status.toLowerCase()
+      const currentStatus = comment.comment_status
       const meta = table.options.meta as CommentsTableMeta
       const anyMeta = table.options.meta as any
       const isEditing = meta.editingCommentId === comment.id
@@ -359,58 +458,66 @@ export function CommentsTableModal({
   comments,
   onDelete,
   onUpdateAnnotation,
+  projectName,
+  documentName,
 }: CommentsTableModalProps) {
   const [sorting, setSorting] = React.useState<SortingState>([])
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
-  )
-  const [typeFilter, setTypeFilter] = React.useState<string>("all")
-  const [statusFilter, setStatusFilter] = React.useState<string>("all")
-  const [userFilter, setUserFilter] = React.useState<string[]>([])
   const [deleteCommentId, setDeleteCommentId] = React.useState<string | null>(
     null,
   )
   const [editingCommentId, setEditingCommentId] =
     React.useState<string | null>(null)
   const [editedComment, setEditedComment] = React.useState<string>("")
+  const [searchQuery, setSearchQuery] = React.useState("")
 
-  // Filter comments by type/status/user
-  const filteredComments = React.useMemo(() => {
-    return comments.filter((comment) => {
-      const matchesType =
-        typeFilter === "all" ||
-        comment.comment_type.toLowerCase() === typeFilter.toLowerCase()
-      const matchesStatus =
-        statusFilter === "all" ||
-        comment.comment_status.toLowerCase() === statusFilter.toLowerCase()
+  const normalizedComments = React.useMemo(
+    () => normalizeCommentsForFiltering(comments),
+    [comments],
+  )
 
-      const userName =
-        comment.users?.first_name && comment.users?.last_name
-          ? `${comment.users.first_name} ${comment.users.last_name}`
-          : comment.users?.email?.split("@")[0] || "Unknown User"
-      const matchesUser =
-        userFilter.length === 0 || userFilter.includes(userName)
-
-      return matchesType && matchesStatus && matchesUser
+  const searchFilteredComments = React.useMemo(() => {
+    if (!searchQuery.trim()) return normalizedComments
+    const lower = searchQuery.toLowerCase()
+    return normalizedComments.filter((comment) => {
+      const commentText = comment.comment?.toLowerCase() || ""
+      const highlighted = comment.highlighted_text?.toLowerCase?.() || ""
+      return (
+        commentText.includes(lower) ||
+        highlighted.includes(lower)
+      )
     })
-  }, [comments, typeFilter, statusFilter, userFilter])
+  }, [normalizedComments, searchQuery])
 
-  // Unique users for filter
-  const uniqueUsers = React.useMemo(() => {
-    const userSet = new Set<string>()
-    comments.forEach((comment) => {
-      const userName =
-        comment.users?.first_name && comment.users?.last_name
-          ? `${comment.users.first_name} ${comment.users.last_name}`
-          : comment.users?.email?.split("@")[0] || "Unknown User"
-      userSet.add(userName)
+  const userOptions = React.useMemo(() => {
+    const map = new Map<string, { label: string; value: string }>()
+    normalizedComments.forEach((comment) => {
+      const name = comment._filter_user
+      if (!name) return
+      if (!map.has(name)) {
+        map.set(name, { label: name, value: name })
+      }
     })
-    return Array.from(userSet).sort()
-  }, [comments])
+    return Array.from(map.values())
+  }, [normalizedComments])
 
-  const handleDeleteClick = React.useCallback((commentId: string) => {
-    setDeleteCommentId(commentId)
-  }, [])
+  const {
+    columns: filterColumns,
+    filters: activeFilters,
+    actions: filterActions,
+    strategy: filterStrategy,
+  } = useDataTableFilters({
+    strategy: "client",
+    data: searchFilteredComments,
+    columnsConfig: commentFilterColumnsConfig,
+    options: {
+      user: userOptions,
+    },
+  })
+
+  const filteredByFilters = React.useMemo(
+    () => filterCommentsByActiveFilters(searchFilteredComments, activeFilters),
+    [activeFilters, searchFilteredComments],
+  )
 
   const handleDeleteConfirm = React.useCallback(() => {
     if (deleteCommentId && onDelete) {
@@ -447,17 +554,15 @@ export function CommentsTableModal({
   )
 
   const table = useReactTable({
-    data: filteredComments,
+    data: filteredByFilters,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
     state: {
       sorting,
-      columnFilters,
     },
     initialState: {
       pagination: {
@@ -486,149 +591,38 @@ export function CommentsTableModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TableIcon className="h-5 w-5" />
-            Comments Table View
+            Table View
+            {projectName && (
+              <>
+                <span className="text-muted-foreground">&gt;</span>
+                {projectName}
+              </>
+            )}
+            {documentName && (
+              <>
+                <span className="text-muted-foreground">&gt;</span>
+                {documentName}
+              </>
+            )}
           </DialogTitle>
         </DialogHeader>
 
-        {/* Filters + search */}
-        <div className="flex items-center justify-between gap-4 py-4">
-          <Input
-            placeholder="Search comments..."
-            value={(table.getColumn("comment")?.getFilterValue() as string) ?? ""}
-            onChange={(event) =>
-              table.getColumn("comment")?.setFilterValue(event.target.value)
-            }
-            className="max-w-sm"
-          />
-
-          <div className="flex items-center gap-4">
-            {/* Type Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Type:</span>
-              <ButtonGroup>
-                <Button
-                  variant={typeFilter === "all" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setTypeFilter("all")}
-                >
-                  All
-                </Button>
-                <Button
-                  variant={typeFilter === "comment" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setTypeFilter("comment")}
-                >
-                  Comment
-                </Button>
-                <Button
-                  variant={typeFilter === "edit" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setTypeFilter("edit")}
-                >
-                  Edit
-                </Button>
-              </ButtonGroup>
-            </div>
-
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Status:</span>
-              <ButtonGroup>
-                <Button
-                  variant={statusFilter === "all" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setStatusFilter("all")}
-                >
-                  All
-                </Button>
-                <Button
-                  variant={statusFilter === "proposed" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setStatusFilter("proposed")}
-                >
-                  Proposed
-                </Button>
-                <Button
-                  variant={statusFilter === "accepted" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setStatusFilter("accepted")}
-                >
-                  Accepted
-                </Button>
-                <Button
-                  variant={statusFilter === "rejected" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setStatusFilter("rejected")}
-                >
-                  Rejected
-                </Button>
-              </ButtonGroup>
-            </div>
-
-            {/* User Filter */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">User:</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="min-w-[120px] justify-between"
-                  >
-                    {userFilter.length > 0
-                      ? `${userFilter.length} selected`
-                      : "All users"}
-                    <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0" align="end">
-                  <Command>
-                    <CommandInput placeholder="Search users..." />
-                    <CommandList>
-                      <CommandEmpty>No users found.</CommandEmpty>
-                      <CommandGroup>
-                        {uniqueUsers.map((user) => (
-                          <CommandItem
-                            key={user}
-                            onSelect={() => {
-                              setUserFilter((current) =>
-                                current.includes(user)
-                                  ? current.filter((u) => u !== user)
-                                  : [...current, user],
-                              )
-                            }}
-                          >
-                            <div className="flex items-center gap-2 flex-1">
-                              <div
-                                className={`w-4 h-4 border rounded flex items-center justify-center ${
-                                  userFilter.includes(user)
-                                    ? "bg-primary border-primary"
-                                    : ""
-                                }`}
-                              >
-                                {userFilter.includes(user) && (
-                                  <Check className="w-3 h-3 text-primary-foreground" />
-                                )}
-                              </div>
-                              {user}
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {userFilter.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => setUserFilter([])}
-                >
-                  Clear
-                </Button>
-              )}
+        <div className="py-4 border-b flex flex-col gap-3">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
+            <SearchInput
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+              placeholder="Search comments or selected text..."
+              wrapperClassName="w-full md:w-[360px] lg:w-[420px]"
+              className="h-9"
+            />
+            <div className="flex-1 min-w-[220px]">
+              <DataTableFilter
+                filters={activeFilters}
+                columns={filterColumns}
+                actions={filterActions}
+                strategy={filterStrategy}
+              />
             </div>
           </div>
         </div>
@@ -672,7 +666,7 @@ export function CommentsTableModal({
                     colSpan={columns.length}
                     className="h-24 text-center"
                   >
-                    No comments found.
+                    No annotations found.
                   </TableCell>
                 </TableRow>
               )}

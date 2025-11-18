@@ -7,36 +7,34 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AvatarImage } from '@/components/ui/avatar'
+import { SearchInput } from '@/components/search-input'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getCommentUserDisplayName, getCommentUserInitials } from '@/lib/comment-utils'
 import {
   MessageSquare,
   MessageCircle,
   Pencil,
-  FileText,
   CircleUserRound,
+  FileText,
   CalendarCheck,
   TableOfContents,
   CircleHelp,
   CircleCheck,
   CircleX,
-  Search,
-  Filter,
-  Check,
-  X,
-  User,
   MoreVertical,
   Edit,
   Trash2,
-  Copy
+  Copy,
+  Filter,
+  MessagesSquare,
+  Circle,
+  ChevronDown
 } from 'lucide-react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
@@ -56,9 +54,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 
 interface Comment {
   id: string
+  annotation_id?: string | null
   document_id: string
   document_name: string
   section_number: string | null
@@ -76,7 +85,9 @@ interface Comment {
     first_name: string | null
     last_name: string | null
     email: string
+    avatar_url?: string | null
   }
+  _filter_user?: string
 }
 
 interface CommentsPanelProps {
@@ -88,17 +99,10 @@ interface CommentsPanelProps {
   selectedCommentId?: string | null
   scrollToCommentId?: string | null
   onFilterChange?: (filteredIds: string[]) => void
-  searchQuery: string
-  statusFilter: string
-  typeFilter: string
-  userFilter: string[]
-  meMode: boolean
-  currentUser: string
-  onSearchChange?: (query: string) => void
-  onStatusFilterChange?: (status: string) => void
-  onTypeFilterChange?: (type: string) => void
-  onUserFilterChange?: (users: string[]) => void
-  onMeModeChange?: (enabled: boolean) => void
+}
+
+function formatAnnotationId(comment: Comment) {
+  return comment.annotation_id || `${comment.id.slice(0, 8)}…`
 }
 
 // Separate component for each comment card to use hooks properly
@@ -136,9 +140,9 @@ function CommentCard({
   const [editedSection, setEditedSection] = useState(comment.section_number || '')
   const [editedPage, setEditedPage] = useState(comment.page_number.toString())
   const [showCopyButton, setShowCopyButton] = useState(false)
-
+  const annotationId = formatAnnotationId(comment)
   const TypeIcon = getTypeIcon(isEditing ? editedType : comment.comment_type)
-  const shortId = comment.id.substring(0, 5).toUpperCase()
+  const shortId = annotationId
   const statusColors = getStatusColor(isEditing ? editedStatus : comment.comment_status)
 
   // Auto-scroll to comment only when explicitly requested via scrollToCommentId
@@ -313,16 +317,23 @@ function CommentCard({
 
                 {/* Three-dot menu */}
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Actions</p>
+                    </TooltipContent>
+                  </Tooltip>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={(e) => {
                       e.stopPropagation()
@@ -415,6 +426,9 @@ function CommentCard({
           /* Edit Mode - Inline Form */
           <TooltipProvider>
             <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between text-sm font-semibold text-foreground">
+                <span>{annotationId}</span>
+              </div>
               {/* Row 1: Type Toggle and Section/Page */}
               <div className="flex gap-2">
                 {/* Type Selection Button Group - Icons Only */}
@@ -557,12 +571,8 @@ function CommentCard({
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <CircleUserRound className="w-4 h-4" />
-                  <span>
-                    {comment.users?.first_name && comment.users?.last_name
-                      ? `${comment.users.first_name} ${comment.users.last_name}`
-                      : comment.users?.email?.split('@')[0] || 'Unknown User'}
-                  </span>
+                  <CircleUserRound className="w-4 h-4 flex-shrink-0" />
+                  <span className="max-w-[160px] truncate">{getCommentUserDisplayName(comment)}</span>
                 </div>
               </div>
               {/* Page and Date Row */}
@@ -625,69 +635,89 @@ export function CommentsPanel({
   selectedCommentId,
   scrollToCommentId,
   onFilterChange,
-  searchQuery,
-  statusFilter,
-  typeFilter,
-  userFilter,
-  meMode,
-  currentUser,
-  onSearchChange,
-  onStatusFilterChange,
-  onTypeFilterChange,
-  onUserFilterChange,
-  onMeModeChange
 }: CommentsPanelProps) {
-  const [userComboOpen, setUserComboOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [typeFilters, setTypeFilters] = useState<string[]>([])
+  const [statusFilters, setStatusFilters] = useState<string[]>([])
+  const [userFilters, setUserFilters] = useState<string[]>([])
+  const [userPopoverOpen, setUserPopoverOpen] = useState(false)
 
-  const filteredComments = comments
-    .filter(comment => {
-      const matchesSearch = searchQuery === '' ||
-        comment.comment.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        comment.highlighted_text?.toLowerCase().includes(searchQuery.toLowerCase())
+  const toggleTypeFilter = (value: string) => {
+    setTypeFilters((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    )
+  }
 
-      const matchesStatus = statusFilter === 'all' || comment.comment_status === statusFilter
-      const matchesType = typeFilter === 'all' || comment.comment_type.toLowerCase() === typeFilter.toLowerCase()
+  const toggleStatusFilter = (value: string) => {
+    setStatusFilters((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    )
+  }
 
-      // Get user name from comment
-      const commentUserName = comment.users?.first_name && comment.users?.last_name
-        ? `${comment.users.first_name} ${comment.users.last_name}`
-        : comment.users?.email?.split('@')[0] || 'Unknown User'
+  const toggleUserFilter = (value: string) => {
+    setUserFilters((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    )
+  }
 
-      const matchesUser = userFilter.length === 0 || userFilter.includes(commentUserName)
-      const matchesMeMode = !meMode || commentUserName === currentUser
+  const clearFilters = () => {
+    setTypeFilters([])
+    setStatusFilters([])
+    setUserFilters([])
+  }
 
-      return matchesSearch && matchesStatus && matchesType && matchesUser && matchesMeMode
+  const uniqueUsers = React.useMemo(() => {
+    const set = new Set<string>()
+    comments.forEach((comment) => {
+      const name = getCommentUserDisplayName(comment)
+      if (name) {
+        set.add(name)
+      }
     })
-    .sort((a, b) => {
-      // Sort by page number first
+    return Array.from(set).sort()
+  }, [comments])
+
+  const filteredComments = React.useMemo(() => {
+    const lowerSearch = searchQuery.trim().toLowerCase()
+
+    const filtered = comments.filter((comment) => {
+      const commentType = comment.comment_type?.toLowerCase?.() || ''
+      const commentStatus = comment.comment_status?.toLowerCase?.() || ''
+      const commentUser = getCommentUserDisplayName(comment)
+      const commentText = comment.comment?.toLowerCase() || ''
+      const highlighted = comment.highlighted_text?.toLowerCase?.() || ''
+
+      const matchesSearch =
+        lowerSearch === '' ||
+        commentText.includes(lowerSearch) ||
+        highlighted.includes(lowerSearch)
+
+      const matchesType =
+        typeFilters.length === 0 || typeFilters.includes(commentType)
+
+      const matchesStatus =
+        statusFilters.length === 0 || statusFilters.includes(commentStatus)
+
+      const matchesUser =
+        userFilters.length === 0 || userFilters.includes(commentUser)
+
+      return matchesSearch && matchesType && matchesStatus && matchesUser
+    })
+
+    return [...filtered].sort((a, b) => {
       if (a.page_number !== b.page_number) {
         return a.page_number - b.page_number
       }
-      // Then by position on the page (using highlight_position.boundingRect.y1 if available)
       const aY = a.highlight_position?.boundingRect?.y1 || 0
       const bY = b.highlight_position?.boundingRect?.y1 || 0
       return aY - bY
     })
+  }, [comments, searchQuery, statusFilters, typeFilters, userFilters])
 
-  // Get unique users from comments
-  const uniqueUsers = React.useMemo(() => {
-    const userSet = new Set<string>()
-    comments.forEach((comment) => {
-      const userName = comment.users?.first_name && comment.users?.last_name
-        ? `${comment.users.first_name} ${comment.users.last_name}`
-        : comment.users?.email?.split('@')[0] || 'Unknown User'
-      userSet.add(userName)
-    })
-    return Array.from(userSet).sort()
-  }, [comments])
-
-  // Notify parent when filtered comments change
   React.useEffect(() => {
-    if (onFilterChange) {
-      onFilterChange(filteredComments.map(c => c.id))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, statusFilter, typeFilter, userFilter, comments])
+    if (!onFilterChange) return
+    onFilterChange(filteredComments.map((comment) => comment.id))
+  }, [filteredComments, onFilterChange])
 
   const getTypeIcon = (type: string) => {
     switch (type.toLowerCase()) {
@@ -700,7 +730,7 @@ export function CommentsPanel({
     }
   }
 
-  const getStatusColor = (status: string) => {
+const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'proposed':
         return {
@@ -745,114 +775,116 @@ export function CommentsPanel({
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Search and Filter */}
-      <div className="flex-shrink-0 p-4 border-b space-y-3">
-        <div className="flex gap-2 items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search annotations..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange?.(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-
+      <div className="flex-shrink-0 border-b bg-background/80">
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          <SearchInput
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            placeholder="Search annotations..."
+            wrapperClassName="flex-1 min-w-[220px]"
+            className="h-9"
+          />
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Filter className="w-4 h-4" />
+              <Button
+                variant="outline"
+                size="icon"
+                className="relative h-9 w-9"
+              >
+                <Filter className="h-4 w-4" />
+                {(typeFilters.length + statusFilters.length + userFilters.length) > 0 && (
+                  <span className="absolute -top-1 -right-1 rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {typeFilters.length + statusFilters.length + userFilters.length}
+                  </span>
+                )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80" align="end">
+            <PopoverContent className="w-80 space-y-4 p-4" align="end">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Filters</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={clearFilters}
+                  disabled={
+                    typeFilters.length === 0 &&
+                    statusFilters.length === 0 &&
+                    userFilters.length === 0
+                  }
+                >
+                  Clear
+                </Button>
+              </div>
               <div className="space-y-4">
-                {/* Type Filter */}
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Type</label>
-                  <ButtonGroup>
-                    <Button
-                      variant={typeFilter === 'all' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onTypeFilterChange?.('all')}
-                    >
-                      All
-                    </Button>
-                    <Button
-                      variant={typeFilter === 'comment' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onTypeFilterChange?.('comment')}
-                    >
-                      Comment
-                    </Button>
-                    <Button
-                      variant={typeFilter === 'edit' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onTypeFilterChange?.('edit')}
-                    >
-                      Edit
-                    </Button>
-                  </ButtonGroup>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                      <MessagesSquare className="h-3.5 w-3.5" />
+                      <span>Type</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {["comment", "edit"].map((value) => (
+                        <label
+                          key={value}
+                          className="flex items-center gap-2 text-sm"
+                          htmlFor={`type-${value}`}
+                        >
+                          <Checkbox
+                            id={`type-${value}`}
+                            checked={typeFilters.includes(value)}
+                            onCheckedChange={() => toggleTypeFilter(value)}
+                          />
+                          <span className="capitalize">{value}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                      <Circle className="h-3.5 w-3.5" />
+                      <span>Status</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {["proposed", "accepted", "rejected"].map((value) => (
+                        <label
+                          key={value}
+                          className="flex items-center gap-2 text-sm"
+                          htmlFor={`status-${value}`}
+                        >
+                          <Checkbox
+                            id={`status-${value}`}
+                            checked={statusFilters.includes(value)}
+                            onCheckedChange={() => toggleStatusFilter(value)}
+                          />
+                          <span className="capitalize">{value}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-
-                {/* Status Filter */}
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Status</label>
-                  <ButtonGroup>
-                    <Button
-                      variant={statusFilter === 'all' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onStatusFilterChange?.('all')}
-                    >
-                      All
-                    </Button>
-                    <Button
-                      variant={statusFilter === 'proposed' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onStatusFilterChange?.('proposed')}
-                    >
-                      Proposed
-                    </Button>
-                    <Button
-                      variant={statusFilter === 'accepted' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onStatusFilterChange?.('accepted')}
-                    >
-                      Accepted
-                    </Button>
-                    <Button
-                      variant={statusFilter === 'rejected' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onStatusFilterChange?.('rejected')}
-                    >
-                      Rejected
-                    </Button>
-                  </ButtonGroup>
-                </div>
-
-                {/* User Filter */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium">User</label>
-                    {userFilter.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto p-0 text-xs"
-                        onClick={() => onUserFilterChange?.([])}
-                      >
-                        Clear
-                      </Button>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">
+                      Users
+                    </span>
+                    {userFilters.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {userFilters.length} selected
+                      </span>
                     )}
                   </div>
-
-                  <Popover open={userComboOpen} onOpenChange={setUserComboOpen}>
+                  <Popover open={userPopoverOpen} onOpenChange={setUserPopoverOpen}>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
-                        {userFilter.length > 0
-                          ? `${userFilter.length} selected`
-                          : 'Select users...'}
+                      <Button
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        {userFilters.length > 0 ? `${userFilters.length} selected` : "Select users"}
+                        <ChevronDown className="h-4 w-4 opacity-60" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-full p-0" align="start">
+                    <PopoverContent className="w-64 p-0" align="start">
                       <Command>
                         <CommandInput placeholder="Search users..." />
                         <CommandList>
@@ -861,24 +893,15 @@ export function CommentsPanel({
                             {uniqueUsers.map((user) => (
                               <CommandItem
                                 key={user}
-                                onSelect={() => {
-                                  onUserFilterChange?.(
-                                    userFilter.includes(user)
-                                      ? userFilter.filter((u) => u !== user)
-                                      : [...userFilter, user]
-                                  )
-                                }}
+                                value={user}
+                                className="flex items-center gap-2"
+                                onSelect={() => toggleUserFilter(user)}
                               >
-                                <div className="flex items-center gap-2 flex-1">
-                                  <div className={`w-4 h-4 border rounded flex items-center justify-center ${
-                                    userFilter.includes(user) ? 'bg-primary border-primary' : ''
-                                  }`}>
-                                    {userFilter.includes(user) && (
-                                      <Check className="w-3 h-3 text-primary-foreground" />
-                                    )}
-                                  </div>
-                                  {user}
-                                </div>
+                                <Checkbox
+                                  checked={userFilters.includes(user)}
+                                  className="pointer-events-none"
+                                />
+                                <span className="truncate">{user}</span>
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -886,27 +909,6 @@ export function CommentsPanel({
                       </Command>
                     </PopoverContent>
                   </Popover>
-
-                  {/* Selected user badges */}
-                  {userFilter.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {userFilter.map((user) => (
-                        <Badge
-                          key={user}
-                          variant="secondary"
-                          className="text-xs gap-1 pr-1"
-                        >
-                          {user}
-                          <button
-                            onClick={() => onUserFilterChange?.(userFilter.filter((u) => u !== user))}
-                            className="hover:bg-muted-foreground/20 rounded p-0.5"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             </PopoverContent>

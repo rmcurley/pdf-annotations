@@ -8,10 +8,22 @@ import { DocumentsTable, DocumentRow } from "@/components/documents-table"
 import { SectionCards } from "@/components/section-cards"
 import { SiteHeader } from "@/components/site-header"
 import { UploadDocumentModal } from "@/components/upload-document-modal"
+import { CommentsTableModal } from "@/components/comments-table-modal"
 import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { buttonVariants } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 
 interface Project {
@@ -32,9 +44,21 @@ interface Document {
 
 interface Comment {
   id: string
+  annotation_id?: string | null
   document_id: string
+  document_name?: string
+  section_number?: string | null
+  page_number?: number | null
+  comment: string
+  comment_type: string
   comment_status: string
+  highlighted_text?: string | null
   created_at: string
+  users?: {
+    first_name: string | null
+    last_name: string | null
+    email: string
+  }
 }
 
 export default function Page() {
@@ -46,8 +70,12 @@ export default function Page() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [allDocuments, setAllDocuments] = useState<Document[]>([])
   const [comments, setComments] = useState<Comment[]>([])
+  const [allCommentsForTable, setAllCommentsForTable] = useState<Comment[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [tableViewOpen, setTableViewOpen] = useState(false)
+  const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null)
+  const [deleteDocumentAnnotationCount, setDeleteDocumentAnnotationCount] = useState(0)
 
   useEffect(() => {
     fetchData()
@@ -133,6 +161,38 @@ export default function Page() {
 
         if (commentsError) throw commentsError
         setComments(commentsData || [])
+
+        // Fetch full comment details for table view
+        const { data: fullCommentsData, error: fullCommentsError } = await supabase
+          .from('comments')
+          .select('*')
+          .in('document_id', documentIds)
+          .order('created_at', { ascending: false })
+
+        if (fullCommentsError) {
+          console.error('Error fetching full comments:', fullCommentsError)
+          setAllCommentsForTable([])
+        } else {
+          // Fetch user data separately for each comment
+          const commentsWithUsers = await Promise.all(
+            (fullCommentsData || []).map(async (comment) => {
+              if (comment.user_id) {
+                const { data: userData } = await supabase
+                  .from('users')
+                  .select('first_name, last_name, email, avatar_url')
+                  .eq('id', comment.user_id)
+                  .single()
+
+                return {
+                  ...comment,
+                  users: userData
+                }
+              }
+              return comment
+            })
+          )
+          setAllCommentsForTable(commentsWithUsers)
+        }
       }
 
       setDocuments(documentsWithReviewers)
@@ -157,6 +217,7 @@ export default function Page() {
     return {
       id: doc.id,
       name: doc.name,
+      pdf_url: doc.pdf_url,
       page_count: doc.page_count,
       file_size: doc.file_size,
       version: doc.version || 'Draft',
@@ -209,34 +270,74 @@ export default function Page() {
   })()
 
   const handleUpdateDocument = (documentId: string, updates: { name?: string; page_count?: number | null }) => {
-    // The DocumentsTable component handles both the database update and local state update
-    // No need to refetch data here - the table uses optimistic updates
+    setDocuments((prev) =>
+      prev.map((doc) =>
+        doc.id === documentId ? { ...doc, ...updates } : doc
+      )
+    )
   }
 
-  const handleDeleteDocument = async (documentId: string) => {
+  const handleDeleteDocument = (documentId: string) => {
     // Get annotation count for this document
     const docComments = comments.filter(c => c.document_id === documentId)
     const annotationCount = docComments.length
 
-    const message = annotationCount > 0
-      ? `If you delete this file, you will permanently delete ${annotationCount} annotation${annotationCount !== 1 ? 's' : ''}.`
-      : 'Are you sure you want to delete this document?'
+    setDeleteDocumentId(documentId)
+    setDeleteDocumentAnnotationCount(annotationCount)
+  }
 
-    if (confirm(message)) {
-      try {
-        const { error } = await supabase
-          .from('documents')
-          .delete()
-          .eq('id', documentId)
+  const handleDeleteDocumentConfirm = async () => {
+    if (!deleteDocumentId) return
 
-        if (error) throw error
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', deleteDocumentId)
 
-        // Refresh data
-        fetchData()
-      } catch (error) {
-        console.error('Error deleting document:', error)
-        alert('Failed to delete document')
-      }
+      if (error) throw error
+
+      // Refresh data
+      fetchData()
+      setDeleteDocumentId(null)
+      setDeleteDocumentAnnotationCount(0)
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert('Failed to delete document')
+    }
+  }
+
+  const handleUpdateAnnotation = async (commentId: string, updates: Partial<Comment>) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .update(updates)
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      // Refresh data
+      fetchData()
+    } catch (error) {
+      console.error('Error updating annotation:', error)
+      alert('Failed to update annotation')
+    }
+  }
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      // Refresh data
+      fetchData()
+    } catch (error) {
+      console.error('Error deleting annotation:', error)
+      alert('Failed to delete annotation')
     }
   }
 
@@ -282,6 +383,7 @@ export default function Page() {
                   onAddDocument={() => setUploadModalOpen(true)}
                   onUpdateDocument={handleUpdateDocument}
                   onDeleteDocument={handleDeleteDocument}
+                  onTableView={() => setTableViewOpen(true)}
                 />
               )}
             </div>
@@ -296,6 +398,43 @@ export default function Page() {
         projectId={projectId}
         onUploadComplete={handleUploadComplete}
       />
+
+      {/* Comments Table View Modal */}
+      <CommentsTableModal
+        open={tableViewOpen}
+        onOpenChange={setTableViewOpen}
+        comments={allCommentsForTable}
+        onDelete={handleDeleteComment}
+        onUpdateAnnotation={handleUpdateAnnotation}
+        projectName={currentProject?.name}
+      />
+
+      {/* Delete Document Confirmation Dialog */}
+      <AlertDialog
+        open={!!deleteDocumentId}
+        onOpenChange={(open) => !open && setDeleteDocumentId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteDocumentAnnotationCount > 0
+                ? `If you delete this file, you will permanently delete ${deleteDocumentAnnotationCount} annotation${deleteDocumentAnnotationCount !== 1 ? 's' : ''}.`
+                : 'This action cannot be undone. Are you sure you want to delete this document?'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDocumentConfirm}
+              className={buttonVariants({ variant: "destructive" })}
+              autoFocus
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   )
 }

@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/search-input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -51,7 +52,8 @@ import {
 } from '@/components/ui/select'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { MoreVertical, Edit, Trash2, Shield, User as UserIcon, Check, X } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { MoreVertical, Edit, Trash2, Shield, User as UserIcon, Check, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { SiteHeader } from '@/components/site-header'
@@ -77,6 +79,7 @@ interface ProjectMember {
   role: string
 }
 
+// Admin page with user management, search, and sorting
 export default function AdminPage() {
   const router = useRouter()
   const { user } = useAuth()
@@ -92,6 +95,9 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [userProjects, setUserProjects] = useState<string[]>([])
   const [projectComboOpen, setProjectComboOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortColumn, setSortColumn] = useState<'first_name' | 'last_name' | 'email' | null>(null)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   // Edit form state
   const [editFirstName, setEditFirstName] = useState('')
@@ -298,6 +304,53 @@ export default function AdminPage() {
     })
   }
 
+  const handleSort = (column: 'first_name' | 'last_name' | 'email') => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }
+
+  // Filter and sort users
+  const filteredAndSortedUsers = React.useMemo(() => {
+    let filtered = users.filter(u => {
+      if (!searchQuery) return true
+      const query = searchQuery.toLowerCase()
+      const firstName = (u.first_name || '').toLowerCase()
+      const lastName = (u.last_name || '').toLowerCase()
+      const email = u.email.toLowerCase()
+      return firstName.includes(query) || lastName.includes(query) || email.includes(query)
+    })
+
+    if (sortColumn) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal = ''
+        let bVal = ''
+
+        if (sortColumn === 'first_name') {
+          aVal = (a.first_name || '').toLowerCase()
+          bVal = (b.first_name || '').toLowerCase()
+        } else if (sortColumn === 'last_name') {
+          aVal = (a.last_name || '').toLowerCase()
+          bVal = (b.last_name || '').toLowerCase()
+        } else if (sortColumn === 'email') {
+          aVal = a.email.toLowerCase()
+          bVal = b.email.toLowerCase()
+        }
+
+        if (sortDirection === 'asc') {
+          return aVal.localeCompare(bVal)
+        } else {
+          return bVal.localeCompare(aVal)
+        }
+      })
+    }
+
+    return filtered
+  }, [users, searchQuery, sortColumn, sortDirection])
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -333,18 +386,65 @@ export default function AdminPage() {
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="mb-4">
+                  <SearchInput
+                    value={searchQuery}
+                    onValueChange={setSearchQuery}
+                    placeholder="Search users..."
+                    wrapperClassName="max-w-sm w-full"
+                    className="h-9"
+                  />
+                </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
+                      <TableHead>
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none"
+                          onClick={() => handleSort('first_name')}
+                        >
+                          <span>Name</span>
+                          <div className="flex flex-col">
+                            <ChevronUp
+                              className={`h-3 w-3 -mb-1 ${
+                                sortColumn === 'first_name' && sortDirection === 'asc' ? "text-foreground" : "text-muted-foreground"
+                              }`}
+                            />
+                            <ChevronDown
+                              className={`h-3 w-3 ${
+                                sortColumn === 'first_name' && sortDirection === 'desc' ? "text-foreground" : "text-muted-foreground"
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none"
+                          onClick={() => handleSort('email')}
+                        >
+                          <span>Email</span>
+                          <div className="flex flex-col">
+                            <ChevronUp
+                              className={`h-3 w-3 -mb-1 ${
+                                sortColumn === 'email' && sortDirection === 'asc' ? "text-foreground" : "text-muted-foreground"
+                              }`}
+                            />
+                            <ChevronDown
+                              className={`h-3 w-3 ${
+                                sortColumn === 'email' && sortDirection === 'desc' ? "text-foreground" : "text-muted-foreground"
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {users.map((u) => (
+                    {filteredAndSortedUsers.map((u) => (
                       <TableRow key={u.id}>
                         <TableCell>
                           {u.first_name && u.last_name
@@ -362,11 +462,18 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Actions</p>
+                              </TooltipContent>
+                            </Tooltip>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => handleEditClick(u)}>
                                 <Edit className="h-4 w-4 mr-2" />

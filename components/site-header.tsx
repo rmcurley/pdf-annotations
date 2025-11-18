@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { PanelRightClose, PanelRightOpen, Table } from "lucide-react"
 import {
   Breadcrumb,
@@ -81,19 +82,26 @@ export function SiteHeader({
             </Button>
           )}
           {showAnnotationsToggle && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggleAnnotations}
-              className="-mr-1"
-            >
-              {annotationsVisible ? (
-                <PanelRightClose className="h-5 w-5" />
-              ) : (
-                <PanelRightOpen className="h-5 w-5" />
-              )}
-              <span className="sr-only">Toggle annotations panel</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onToggleAnnotations}
+                  className="-mr-1"
+                >
+                  {annotationsVisible ? (
+                    <PanelRightClose className="h-5 w-5" />
+                  ) : (
+                    <PanelRightOpen className="h-5 w-5" />
+                  )}
+                  <span className="sr-only">Toggle annotations panel</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{annotationsVisible ? 'Hide' : 'Show'} annotations panel</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>

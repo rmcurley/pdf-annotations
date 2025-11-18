@@ -7,26 +7,12 @@ import { useAuth } from '@/contexts/auth-context'
 import { AppSidebar } from '@/components/app-sidebar'
 import { SiteHeader } from '@/components/site-header'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
-import { Card } from '@/components/ui/card'
 import { ResizablePanel } from '@/components/resizable-panel'
 import { CommentsPanel } from '@/components/comments-panel'
 import { CommentsTableModal } from '@/components/comments-table-modal'
 import { PdfViewerWrapper } from '@/components/pdf-viewer-wrapper'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ButtonGroup } from '@/components/ui/button-group'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { ArrowLeft, FileText, Calendar, Search, Filter, Check, X } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import type { IHighlight, NewHighlight } from 'react-pdf-highlighter'
 
 interface Document {
@@ -46,6 +32,7 @@ interface Project {
 
 interface Comment {
   id: string
+  annotation_id?: string | null
   document_id: string
   document_name: string
   section_number: string | null
@@ -86,23 +73,7 @@ export default function DocumentPage() {
   const [loading, setLoading] = useState(true)
   const [annotationsVisible, setAnnotationsVisible] = useState(true)
 
-  // Filter state (lifted from CommentsPanel)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [userFilter, setUserFilter] = useState<string[]>([])
-  const [userComboOpen, setUserComboOpen] = useState(false)
-  const [meMode, setMeMode] = useState(false)
   const [tableViewOpen, setTableViewOpen] = useState(false)
-
-  // Get current user info
-  const currentUserName = user?.profile?.first_name && user?.profile?.last_name
-    ? `${user.profile.first_name} ${user.profile.last_name}`
-    : user?.email?.split('@')[0] || 'User'
-
-  const currentUserInitials = user?.profile?.first_name && user?.profile?.last_name
-    ? `${user.profile.first_name[0]}${user.profile.last_name[0]}`.toUpperCase()
-    : (user?.email?.[0] || 'U').toUpperCase()
 
   useEffect(() => {
     fetchDocument()
@@ -227,7 +198,7 @@ export default function DocumentPage() {
       if (userIds.length > 0) {
         const { data: usersData, error: usersError } = await supabase
           .from('users')
-          .select('id, first_name, last_name, email')
+          .select('id, first_name, last_name, email, avatar_url')
           .in('id', userIds)
 
         if (!usersError && usersData) {
@@ -459,17 +430,6 @@ export default function DocumentPage() {
                   selectedCommentId={selectedCommentId}
                   scrollToCommentId={scrollToCommentId}
                   onFilterChange={setFilteredCommentIds}
-                  searchQuery={searchQuery}
-                  statusFilter={statusFilter}
-                  typeFilter={typeFilter}
-                  userFilter={userFilter}
-                  meMode={meMode}
-                  currentUser={currentUserName}
-                  onSearchChange={setSearchQuery}
-                  onStatusFilterChange={setStatusFilter}
-                  onTypeFilterChange={setTypeFilter}
-                  onUserFilterChange={setUserFilter}
-                  onMeModeChange={setMeMode}
                 />
               }
               defaultLeftWidth={70}
@@ -485,6 +445,8 @@ export default function DocumentPage() {
         comments={comments}
         onDelete={handleDeleteComment}
         onUpdateAnnotation={handleUpdateAnnotation}
+        projectName={project?.name}
+        documentName={document?.name}
       />
     </SidebarProvider>
   )

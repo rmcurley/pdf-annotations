@@ -52,25 +52,51 @@ export function AccountModal({ open, onOpenChange }: AccountModalProps) {
       }
 
       const file = event.target.files[0]
+
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024
+      if (file.size > maxSize) {
+        alert('Avatar must be smaller than 5MB')
+        setUploading(false)
+        return
+      }
+
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+      if (!validTypes.includes(file.type)) {
+        alert('Please upload a valid image file (JPEG, PNG, GIF, or WebP)')
+        setUploading(false)
+        return
+      }
+
       const fileExt = file.name.split('.').pop()
       const fileName = `${user?.id}-${Date.now()}.${fileExt}`
 
+      console.log('Uploading avatar:', fileName)
+
       const { error: uploadError, data } = await supabase.storage
         .from('avatars')
-        .upload(fileName, file)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        })
 
       if (uploadError) {
+        console.error('Upload error:', uploadError)
         throw uploadError
       }
+
+      console.log('Upload successful:', data)
 
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(fileName)
 
+      console.log('Public URL:', publicUrl)
       setAvatarUrl(publicUrl)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading avatar:', error)
-      alert('Error uploading avatar')
+      alert(`Error uploading avatar: ${error.message || 'Unknown error'}. Please check the browser console for details.`)
     } finally {
       setUploading(false)
     }

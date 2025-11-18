@@ -14,7 +14,7 @@ import {
   useReactTable,
   VisibilityState,
 } from "@tanstack/react-table"
-import { MoreVertical, Plus, Pencil, Trash2, FileText, ChevronUp, ChevronDown } from "lucide-react"
+import { MoreVertical, Plus, Pencil, Trash2, FileText, ChevronUp, ChevronDown, Archive, ArchiveRestore, Check, X } from "lucide-react"
 import { CircleCheck, CircleHelp, CircleX } from "lucide-react"
 import {
   IconChevronDown,
@@ -29,6 +29,8 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { SearchInput } from "@/components/search-input"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -57,10 +59,12 @@ export const projectSchema = z.object({
   id: z.string(),
   name: z.string(),
   document_count: z.number().default(0),
+  total_pages: z.number().default(0),
   proposed_count: z.number().default(0),
   approved_count: z.number().default(0),
   rejected_count: z.number().default(0),
   is_owner: z.boolean().default(false),
+  archived: z.boolean().default(false),
 })
 
 export type ProjectRow = z.infer<typeof projectSchema>
@@ -70,6 +74,7 @@ interface ProjectsTableProps {
   onAddProject: () => void
   onUpdateProject: (projectId: string, updates: { name?: string }) => void
   onDeleteProject: (projectId: string) => void
+  onArchiveProject?: (projectId: string, archived: boolean) => void
 }
 
 export function ProjectsTable({
@@ -77,11 +82,42 @@ export function ProjectsTable({
   onAddProject,
   onUpdateProject,
   onDeleteProject,
+  onArchiveProject,
 }: ProjectsTableProps) {
   const router = useRouter()
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
+  const [editingRowId, setEditingRowId] = React.useState<string | null>(null)
+  const [editedName, setEditedName] = React.useState('')
+  const [saving, setSaving] = React.useState(false)
+
+  const handleStartEdit = React.useCallback((row: ProjectRow) => {
+    setEditingRowId(row.id)
+    setEditedName(row.name)
+  }, [])
+
+  const handleSaveEdit = React.useCallback(async (projectId: string) => {
+    if (!editedName.trim()) {
+      return // Don't save empty names
+    }
+
+    setSaving(true)
+    try {
+      await onUpdateProject(projectId, { name: editedName.trim() })
+      setEditingRowId(null)
+      setEditedName('')
+    } catch (error) {
+      console.error('Error saving project name:', error)
+    } finally {
+      setSaving(false)
+    }
+  }, [editedName, onUpdateProject])
+
+  const handleCancelEdit = React.useCallback(() => {
+    setEditingRowId(null)
+    setEditedName('')
+  }, [])
 
   const columns: ColumnDef<ProjectRow>[] = [
     {
@@ -106,14 +142,44 @@ export function ProjectsTable({
           </div>
         </div>
       ),
-      cell: ({ row }) => (
-        <div
-          className="font-medium cursor-pointer hover:underline"
-          onClick={() => router.push(`/projects/${row.original.id}`)}
-        >
-          {row.getValue("name")}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const isEditing = editingRowId === row.original.id
+        const isOwner = row.original.is_owner
+
+        if (isEditing) {
+          return (
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <Input
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                className="h-8"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveEdit(row.original.id)
+                  } else if (e.key === 'Escape') {
+                    handleCancelEdit()
+                  }
+                }}
+              />
+            </div>
+          )
+        }
+
+        const isArchived = row.original.archived
+
+        return (
+          <div
+            className={`flex items-center gap-2 font-medium cursor-pointer hover:underline ${
+              isArchived ? "text-muted-foreground" : ""
+            }`}
+            onClick={() => router.push(`/projects/${row.original.id}`)}
+          >
+            {isArchived && <Archive className="h-4 w-4" />}
+            {row.getValue("name")}
+          </div>
+        )
+      },
       enableHiding: false,
     },
     {
@@ -123,6 +189,15 @@ export function ProjectsTable({
         <div className="flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm">{row.getValue("document_count")}</span>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "total_pages",
+      header: "Total Pages",
+      cell: ({ row }) => (
+        <div className="text-sm text-muted-foreground">
+          {row.getValue("total_pages") || 0}
         </div>
       ),
     },
@@ -151,6 +226,52 @@ export function ProjectsTable({
       cell: ({ row }) => {
         const project = row.original
         const isOwner = project.is_owner
+        const isEditing = editingRowId === row.original.id
+
+        if (isEditing) {
+          return (
+            <div className="flex justify-end gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleSaveEdit(row.original.id)
+                    }}
+                    disabled={saving}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Save</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCancelEdit()
+                    }}
+                    disabled={saving}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Cancel</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )
+        }
 
         return (
           <div className="flex justify-end">
@@ -161,30 +282,37 @@ export function ProjectsTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={() => router.push(`/projects/${project.id}`)}
-                >
-                  View Project
-                </DropdownMenuItem>
                 {isOwner && (
                   <>
-                    <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={() => {
-                        const newName = prompt("Enter new project name:", project.name)
-                        if (newName && newName !== project.name) {
-                          onUpdateProject(project.id, { name: newName })
-                        }
-                      }}
+                      onClick={() => handleStartEdit(project)}
                     >
                       <Pencil className="mr-2 h-4 w-4" />
                       Edit
                     </DropdownMenuItem>
+                    {onArchiveProject && (
+                      <DropdownMenuItem
+                        onClick={() => onArchiveProject(project.id, !project.archived)}
+                      >
+                        {project.archived ? (
+                          <>
+                            <ArchiveRestore className="mr-2 h-4 w-4" />
+                            Unarchive
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="mr-2 h-4 w-4" />
+                            Archive
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => onDeleteProject(project.id)}
                       className="text-destructive focus:text-destructive focus:bg-destructive/10"
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
+                      <Trash2 className="mr-2 h-4 w-4 text-destructive" />
                       Delete
                     </DropdownMenuItem>
                   </>
@@ -217,13 +345,12 @@ export function ProjectsTable({
   return (
     <div className="w-full space-y-4 px-4 lg:px-6">
       <div className="flex items-center justify-between">
-        <Input
-          placeholder="Filter projects..."
+        <SearchInput
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn("name")?.setFilterValue(event.target.value)
-          }
-          className="max-w-sm"
+          onValueChange={(value) => table.getColumn("name")?.setFilterValue(value)}
+          placeholder="Search projects..."
+          wrapperClassName="max-w-sm w-full"
+          className="h-9"
         />
         <div className="flex gap-2">
           <DropdownMenu>

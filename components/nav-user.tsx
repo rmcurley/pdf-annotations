@@ -47,8 +47,15 @@ export function NavUser({
   const { signOut, user: authUser, loading } = useAuth()
   const [accountModalOpen, setAccountModalOpen] = React.useState(false)
   const [adminModalOpen, setAdminModalOpen] = React.useState(false)
+  const [signingOut, setSigningOut] = React.useState(false)
 
   const isAdmin = authUser?.profile?.role === 'admin'
+
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    await signOut()
+    // No need to set signingOut to false - we're redirecting
+  }
 
   // Show skeleton while loading
   if (loading) {
@@ -127,9 +134,9 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut}>
+            <DropdownMenuItem onClick={handleSignOut} disabled={signingOut}>
               <IconLogout />
-              Log out
+              {signingOut ? 'Logging out...' : 'Log out'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
