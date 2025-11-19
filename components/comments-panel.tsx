@@ -95,7 +95,7 @@ interface CommentsPanelProps {
   onCommentClick?: (comment: Comment) => void
   onEditClick?: (comment: Comment) => void
   onDeleteClick?: (comment: Comment) => void
-  onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => void | Promise<void>
+  onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => Promise<void>
   selectedCommentId?: string | null
   scrollToCommentId?: string | null
   onFilterChange?: (filteredIds: string[]) => void
@@ -175,7 +175,7 @@ function CommentCard({
     setEditedType(comment.comment_type)
     setEditedStatus(comment.comment_status)
     setEditedSection(comment.section_number || '')
-    setEditedPage(comment.page_number.toString())
+    setEditedPage(comment.page_number?.toString() || '')
     setIsEditing(false)
   }
 

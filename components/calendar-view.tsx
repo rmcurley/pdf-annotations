@@ -31,6 +31,9 @@ interface TaskProjection {
   projected_status: string | null
   schedule_type: string | null
   assignee_name: string | null
+  space_name?: string | null
+  folder_name?: string | null
+  list_name?: string | null
 }
 
 interface CalendarViewProps {
@@ -236,7 +239,7 @@ export function CalendarView({ projections }: CalendarViewProps) {
                 <label className="text-sm font-medium text-muted-foreground">Current Status</label>
                 <div className="mt-1">
                   <Badge variant="outline" className="py-1.5">
-                    {formatStatus(selectedTask?.current_status)}
+                    {formatStatus(selectedTask?.current_status ?? null)}
                   </Badge>
                 </div>
               </div>
@@ -244,7 +247,7 @@ export function CalendarView({ projections }: CalendarViewProps) {
                 <label className="text-sm font-medium text-muted-foreground">Projected Status</label>
                 <div className="mt-1">
                   <Badge variant="secondary" className="py-1.5">
-                    {formatStatus(selectedTask?.projected_status)}
+                    {formatStatus(selectedTask?.projected_status ?? null)}
                   </Badge>
                 </div>
               </div>
@@ -256,7 +259,7 @@ export function CalendarView({ projections }: CalendarViewProps) {
                 <label className="text-sm font-medium text-muted-foreground">Priority</label>
                 <div className="flex items-center gap-2 mt-1">
                   {(() => {
-                    const flagStyle = getFlagStyle(selectedTask?.schedule_type)
+                    const flagStyle = getFlagStyle(selectedTask?.schedule_type ?? null)
                     return (
                       <Flag
                         className={`w-4 h-4 ${flagStyle.color}`}
@@ -264,14 +267,18 @@ export function CalendarView({ projections }: CalendarViewProps) {
                       />
                     )
                   })()}
-                  <span className="text-sm">{formatScheduleType(selectedTask?.schedule_type)}</span>
+                  <span className="text-sm">
+                    {formatScheduleType(selectedTask?.schedule_type ?? null)}
+                  </span>
                 </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Projected Due Date</label>
                 <div className="flex items-center gap-2 mt-1">
                   <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">{formatDate(selectedTask?.projected_due_date)}</span>
+                  <span className="text-sm">
+                    {formatDate(selectedTask?.projected_due_date ?? null)}
+                  </span>
                 </div>
               </div>
             </div>
