@@ -66,7 +66,8 @@ interface DetailedComment {
     first_name: string | null
     last_name: string | null
     email: string
-  }
+    avatar_url?: string | null
+  } | null
 }
 
 export default function Page() {
