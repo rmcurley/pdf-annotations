@@ -20,6 +20,7 @@ type ExtendedHighlightComment = IHighlight['comment'] & {
   type: string
   status: string
   user_name: string
+  annotation_id?: string | null
 }
 
 interface Document {
@@ -116,6 +117,7 @@ export default function DocumentPage() {
         user_name: comment.users?.first_name && comment.users?.last_name
           ? `${comment.users.first_name} ${comment.users.last_name}`
           : comment.users?.email?.split('@')[0] || 'Unknown User',
+        annotation_id: comment.annotation_id,
       }
 
       return {

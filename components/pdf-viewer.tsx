@@ -34,6 +34,7 @@ import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SearchInput } from '@/components/search-input'
+import { formatAnnotationId } from '@/lib/comment-utils'
 
 const HighlightWrapper = React.forwardRef<
   HTMLDivElement,
@@ -825,7 +826,12 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     const commentStatus = (highlight.comment as any)?.status || 'proposed'
     const TypeIcon = getTypeIcon(commentType)
     const statusColors = getStatusColor(commentStatus)
-    const shortId = highlight.id?.substring(0, 5).toUpperCase() || ''
+    const formattedId =
+      (highlight.comment as any)?.annotation_id ||
+      formatAnnotationId({
+        id: highlight.id || "",
+        annotation_id: (highlight.comment as any)?.annotation_id,
+      } as any)
 
     const component = highlight.comment?.text ? (
       <Highlight
@@ -900,7 +906,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                 </div>
                 {/* Annotation ID */}
                 <div className="font-semibold text-sm">
-                  {shortId}
+                  {formattedId}
                 </div>
               </div>
               {/* Status Badge */}
