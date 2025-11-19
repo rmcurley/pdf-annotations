@@ -118,6 +118,7 @@ function CommentForm({
               <SelectContent>
                 <SelectItem value="comment">Comment</SelectItem>
                 <SelectItem value="edit">Edit</SelectItem>
+                <SelectItem value="discussion">Discussion</SelectItem>
               </SelectContent>
             </Select>
           </div>

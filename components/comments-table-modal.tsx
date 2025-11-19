@@ -27,6 +27,7 @@ import {
   CircleHelp,
   CircleX,
   Edit,
+  UsersRound,
 } from "lucide-react"
 
 import {
@@ -195,7 +196,7 @@ function EditableCommentCell({
   }
 
   return (
-    <div className="max-w-md truncate">
+    <div className="whitespace-pre-wrap break-words">
       {comment.comment}
     </div>
   )
@@ -249,8 +250,15 @@ const columns: ColumnDef<TableComment>[] = [
     header: () => <div className="text-center">Type</div>,
     cell: ({ row }) => {
       const type = row.original.comment_type
-      const TypeIcon = type === "edit" ? Pencil : MessageCircle
-      const typeLabel = type === "edit" ? "Edit" : "Comment"
+      let TypeIcon = MessageCircle
+      let typeLabel = "Comment"
+      if (type === "edit") {
+        TypeIcon = Pencil
+        typeLabel = "Edit"
+      } else if (type === "discussion") {
+        TypeIcon = UsersRound
+        typeLabel = "Discussion"
+      }
       return (
         <div className="flex items-center justify-center">
           <Tooltip>
@@ -340,7 +348,7 @@ const columns: ColumnDef<TableComment>[] = [
     accessorKey: "highlighted_text",
     header: "Selected Text",
     cell: ({ row }) => (
-      <div className="max-w-xs truncate text-sm">
+      <div className="text-sm whitespace-pre-wrap break-words">
         {row.original.highlighted_text ? (
           row.original.highlighted_text
         ) : (

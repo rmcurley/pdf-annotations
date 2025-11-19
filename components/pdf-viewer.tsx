@@ -29,7 +29,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { MessageSquarePlus, MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Loader2 } from 'lucide-react'
+import { MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Loader2, UsersRound, Save } from 'lucide-react'
 import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -74,7 +74,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [sectionNumber, setSectionNumber] = useState('')
   const [showAddButton, setShowAddButton] = useState(false)
   const [buttonPosition, setButtonPosition] = useState<{ x: number; y: number } | null>(null)
-  const [inlineAnnotationType, setInlineAnnotationType] = useState<'comment' | 'edit'>('comment')
+  const [inlineAnnotationType, setInlineAnnotationType] = useState<'comment' | 'edit' | 'discussion'>('comment')
   const [showInlineDetails, setShowInlineDetails] = useState(false)
   const [inlineAnnotationText, setInlineAnnotationText] = useState('')
   const [inlineSaving, setInlineSaving] = useState(false)
@@ -95,6 +95,17 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const preservedScrollRef = React.useRef<{ pageNumber: number; offsetRatio: number } | null>(null)
   const scrollRafRef = React.useRef<number | null>(null)
   const pageJumpInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  const getInlinePlaceholder = () => {
+    switch (inlineAnnotationType) {
+      case 'edit':
+        return 'Suggest an edit or alternative text...'
+      case 'discussion':
+        return 'Start a discussion about this text...'
+      default:
+        return 'Add a comment about this text...'
+    }
+  }
 
   // Scroll to highlight when scrollToHighlightId changes
   React.useEffect(() => {
@@ -754,7 +765,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   // Helper functions for popup styling
   const getTypeIcon = (type: string) => {
-    return type?.toLowerCase() === 'edit' ? Pencil : MessageSquare
+    switch (type?.toLowerCase?.()) {
+      case 'edit':
+        return Pencil
+      case 'discussion':
+        return UsersRound
+      default:
+        return MessageSquare
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -1031,14 +1049,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               </div>
 
               {/* Type Selection Icons */}
-              <div className="flex gap-2 mb-2">
+              <div className="grid grid-cols-3 gap-2 mb-2">
                 <Button
                   size="sm"
                   variant={inlineAnnotationType === 'comment' ? 'default' : 'outline'}
                   className="flex-1 text-xs"
                   onClick={() => setInlineAnnotationType('comment')}
                 >
-                  <MessageSquarePlus className="w-3 h-3 mr-1" />
+                  <MessageCircle className="w-3 h-3 mr-1" />
                   Comment
                 </Button>
                 <Button
@@ -1050,16 +1068,21 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   <Pencil className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
+                <Button
+                  size="sm"
+                  variant={inlineAnnotationType === 'discussion' ? 'default' : 'outline'}
+                  className="flex-1 text-xs"
+                  onClick={() => setInlineAnnotationType('discussion')}
+                >
+                  <UsersRound className="w-3 h-3 mr-1" />
+                  Discussion
+                </Button>
               </div>
 
               {/* Quick Annotation Textarea */}
               <Textarea
                 className="inline-annotation-textarea text-sm mb-2 min-h-[80px] focus-visible:ring-0 focus-visible:ring-offset-0"
-                placeholder={
-                  inlineAnnotationType === 'comment'
-                    ? 'Add a comment about this text...'
-                    : 'Suggest an edit or alternative text...'
-                }
+                placeholder={getInlinePlaceholder()}
                 value={inlineAnnotationText}
                 onChange={(e) => setInlineAnnotationText(e.target.value)}
                 autoFocus
@@ -1154,7 +1177,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     </>
                   ) : (
                     <>
-                      <MessageCircle className="w-3 h-3 mr-1" />
+                      <Save className="w-3 h-3 mr-1" />
                       Save
                     </>
                   )}

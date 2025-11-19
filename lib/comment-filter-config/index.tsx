@@ -1,6 +1,6 @@
 import type React from "react"
 import type { LucideIcon } from "lucide-react"
-import { Circle, CircleCheck, CircleHelp, CircleX, MessageCircle, MessagesSquare, Pencil, UserCircle } from "lucide-react"
+import { Circle, CircleCheck, CircleHelp, CircleX, MessageCircle, MessagesSquare, Pencil, UserCircle, UsersRound } from "lucide-react"
 
 import { createColumnConfigHelper } from "@/components/data-table-filter/core/filters"
 import type { FiltersState } from "@/components/data-table-filter/core/types"
@@ -18,6 +18,7 @@ const dtf = createColumnConfigHelper<FilterableComment>()
 export const COMMENT_TYPE_OPTIONS = [
   { label: "Comment", value: "comment" },
   { label: "Edit", value: "edit" },
+  { label: "Discussion", value: "discussion" },
 ] as const
 
 export const COMMENT_STATUS_OPTIONS = [
@@ -39,6 +40,7 @@ const withClassNames = (Icon: LucideIcon, className: string): IconComponent => {
 export const TYPE_OPTION_ICONS: Record<string, IconComponent> = {
   comment: withClassNames(MessageCircle, "size-4 text-muted-foreground"),
   edit: withClassNames(Pencil, "size-4 text-muted-foreground"),
+  discussion: withClassNames(UsersRound, "size-4 text-muted-foreground"),
 }
 
 export const STATUS_OPTION_ICONS: Record<string, IconComponent> = {

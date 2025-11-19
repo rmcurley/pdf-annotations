@@ -33,7 +33,8 @@ import {
   Filter,
   MessagesSquare,
   Circle,
-  ChevronDown
+  ChevronDown,
+  UsersRound,
 } from 'lucide-react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
@@ -109,6 +110,17 @@ interface CommentsPanelProps {
 
 function formatAnnotationId(comment: Comment) {
   return comment.annotation_id || `${comment.id.slice(0, 8)}…`
+}
+
+function getTypeLabelText(type: string) {
+  switch (type?.toLowerCase?.() ?? "") {
+    case "edit":
+      return "Suggested Edit"
+    case "discussion":
+      return "Discussion"
+    default:
+      return "Comment"
+  }
 }
 
 // Separate component for each comment card to use hooks properly
@@ -475,6 +487,21 @@ function CommentCard({
                       <TooltipContent>
                         <p>Edit</p>
                       </TooltipContent>
+                     </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant={editedType.toLowerCase() === 'discussion' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setEditedType('discussion')}
+                          className="px-3 h-9"
+                        >
+                          <UsersRound className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Discussion</p>
+                      </TooltipContent>
                     </Tooltip>
                   </ButtonGroup>
                 </div>
@@ -537,7 +564,7 @@ function CommentCard({
               {/* Annotation Text */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  {editedType.toLowerCase() === 'edit' ? 'Suggested Edit' : 'Comment'}
+                    {getTypeLabelText(editedType)}
                 </label>
                 <Textarea
                   value={editedText}
@@ -621,7 +648,7 @@ function CommentCard({
                   {/* Annotation Text */}
                   <div>
                     <div className="text-xs font-medium text-muted-foreground mb-1">
-                      {comment.comment_type.toLowerCase() === 'edit' ? 'Suggested Edit' : 'Comment'}
+                      {getTypeLabelText(comment.comment_type)}
                     </div>
                     <p className="text-sm text-foreground leading-relaxed">
                       {comment.comment}
@@ -732,12 +759,14 @@ export function CommentsPanel({
     onFilterChange(filteredComments.map((comment) => comment.id))
   }, [filteredComments, onFilterChange])
 
-  const getTypeIcon = (type: string): React.ComponentType<React.SVGProps<SVGSVGElement>> => {
+const getTypeIcon = (type: string): React.ComponentType<React.SVGProps<SVGSVGElement>> => {
     switch (type.toLowerCase()) {
       case 'comment':
         return MessageCircle
       case 'edit':
         return Pencil
+      case 'discussion':
+        return UsersRound
       default:
         return MessageCircle
     }
@@ -837,7 +866,7 @@ const getStatusColor = (status: string): StatusColor => {
                       <span>Type</span>
                     </div>
                     <div className="space-y-1.5">
-                      {["comment", "edit"].map((value) => (
+                      {["comment", "edit", "discussion"].map((value) => (
                         <label
                           key={value}
                           className="flex items-center gap-2 text-sm"
