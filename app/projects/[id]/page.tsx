@@ -42,7 +42,14 @@ interface Document {
   created_at: string
 }
 
-interface Comment {
+interface CommentSummary {
+  id: string
+  document_id: string
+  comment_status: string
+  created_at: string
+}
+
+interface DetailedComment {
   id: string
   annotation_id?: string | null
   document_id: string
@@ -69,8 +76,8 @@ export default function Page() {
   const [allProjects, setAllProjects] = useState<Project[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
   const [allDocuments, setAllDocuments] = useState<Document[]>([])
-  const [comments, setComments] = useState<Comment[]>([])
-  const [allCommentsForTable, setAllCommentsForTable] = useState<Comment[]>([])
+  const [comments, setComments] = useState<CommentSummary[]>([])
+  const [allCommentsForTable, setAllCommentsForTable] = useState<DetailedComment[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [tableViewOpen, setTableViewOpen] = useState(false)
@@ -160,7 +167,13 @@ export default function Page() {
           .in('document_id', documentIds)
 
         if (commentsError) throw commentsError
-        setComments(commentsData || [])
+        const summaryComments: CommentSummary[] = (commentsData || []).map((comment) => ({
+          id: comment.id,
+          document_id: comment.document_id,
+          comment_status: comment.comment_status,
+          created_at: comment.created_at,
+        }))
+        setComments(summaryComments)
 
         // Fetch full comment details for table view
         const { data: fullCommentsData, error: fullCommentsError } = await supabase
@@ -191,7 +204,7 @@ export default function Page() {
               return comment
             })
           )
-          setAllCommentsForTable(commentsWithUsers)
+          setAllCommentsForTable(commentsWithUsers as DetailedComment[])
         }
       }
 
