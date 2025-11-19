@@ -1,1 +1,1 @@
-export * from "./comment-filter-config.tsx"
+export * from "./comment-filter-config/index";
