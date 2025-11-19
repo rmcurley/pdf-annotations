@@ -24,6 +24,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { MessageSquarePlus, MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Loader2 } from 'lucide-react'
 import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
@@ -81,12 +86,15 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatches, setSearchMatches] = useState<Element[]>([])
   const [currentMatch, setCurrentMatch] = useState<number>(0)
+  const [pageJumpOpen, setPageJumpOpen] = useState(false)
+  const [pageJumpValue, setPageJumpValue] = useState('')
   const scrollToHighlightRef = React.useRef<((highlight: IHighlight) => void) | null>(null)
   const pdfBookmarksRef = React.useRef<any[]>([])
   const pdfDocumentRef = React.useRef<any>(null)
   const totalPagesSetRef = React.useRef<boolean>(false)
   const preservedScrollRef = React.useRef<{ pageNumber: number; offsetRatio: number } | null>(null)
   const scrollRafRef = React.useRef<number | null>(null)
+  const pageJumpInputRef = React.useRef<HTMLInputElement | null>(null)
 
   // Scroll to highlight when scrollToHighlightId changes
   React.useEffect(() => {
@@ -131,6 +139,17 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       }
     }
   }, [scrollToHighlightId, highlights])
+
+  React.useEffect(() => {
+    if (pageJumpOpen) {
+      setPageJumpValue(currentPage.toString())
+      const timer = window.setTimeout(() => {
+        pageJumpInputRef.current?.focus()
+        pageJumpInputRef.current?.select()
+      }, 10)
+      return () => window.clearTimeout(timer)
+    }
+  }, [pageJumpOpen, currentPage])
 
   // Update DOM classes when selectedHighlightId changes (without remounting component)
   React.useEffect(() => {
@@ -550,6 +569,27 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       // Scroll to match
       searchMatches[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
+  }
+
+  const handlePageJumpOpenChange = (open: boolean) => {
+    if (!totalPages) {
+      setPageJumpOpen(false)
+      return
+    }
+    setPageJumpOpen(open)
+    if (!open) {
+      setPageJumpValue('')
+    }
+  }
+
+  const handlePageJumpSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const parsed = Number(pageJumpValue)
+    if (Number.isNaN(parsed)) return
+    const maxPages = totalPages || 1
+    const normalized = Math.min(Math.max(1, Math.floor(parsed)), maxPages)
+    scrollToPage(normalized)
+    setPageJumpOpen(false)
   }
 
   const scrollToPage = (pageNumber: number) => {
@@ -1224,9 +1264,35 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   </TooltipContent>
                 </Tooltip>
 
-                <span className="text-xs text-muted-foreground min-w-[60px] text-center">
-                  {currentPage} / {totalPages}
-                </span>
+                {totalPages > 0 ? (
+                  <Popover open={pageJumpOpen} onOpenChange={handlePageJumpOpenChange}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground min-w-[70px] text-center rounded px-2 py-1 hover:bg-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {currentPage} / {totalPages}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-44 p-3" side="top" align="center">
+                      <form onSubmit={handlePageJumpSubmit} className="space-y-2">
+                        <p className="text-xs font-medium text-foreground text-center">Go to page</p>
+                        <Input
+                          ref={pageJumpInputRef}
+                          type="number"
+                          min={1}
+                          max={totalPages}
+                          value={pageJumpValue}
+                          onChange={(e) => setPageJumpValue(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                        <p className="text-[11px] text-muted-foreground text-center">Press Enter to jump</p>
+                      </form>
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span className="text-xs text-muted-foreground min-w-[60px] text-center">-- / --</span>
+                )}
 
                 <Tooltip>
                   <TooltipTrigger asChild>
