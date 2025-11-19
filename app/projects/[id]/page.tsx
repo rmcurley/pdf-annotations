@@ -40,6 +40,7 @@ interface Document {
   page_count: number | null
   version?: 'Draft' | 'Revised Draft' | 'Final'
   created_at: string
+  reviewers?: string[]
 }
 
 interface CommentSummary {
@@ -59,7 +60,7 @@ interface DetailedComment {
   comment: string
   comment_type: string
   comment_status: string
-  highlighted_text?: string | null
+  highlighted_text: string | null
   created_at: string
   users?: {
     first_name: string | null
@@ -189,6 +190,16 @@ export default function Page() {
           // Fetch user data separately for each comment
           const commentsWithUsers = await Promise.all(
             (fullCommentsData || []).map(async (comment) => {
+              const baseComment: DetailedComment = {
+                ...comment,
+                highlighted_text: comment.highlighted_text ?? null,
+                section_number: comment.section_number ?? null,
+                page_number: comment.page_number ?? null,
+                comment: comment.comment ?? '',
+                comment_type: comment.comment_type ?? 'comment',
+                comment_status: comment.comment_status ?? 'proposed',
+              }
+
               if (comment.user_id) {
                 const { data: userData } = await supabase
                   .from('users')
@@ -197,14 +208,15 @@ export default function Page() {
                   .single()
 
                 return {
-                  ...comment,
-                  users: userData
+                  ...baseComment,
+                  users: userData,
                 }
               }
-              return comment
+
+              return baseComment
             })
           )
-          setAllCommentsForTable(commentsWithUsers as DetailedComment[])
+          setAllCommentsForTable(commentsWithUsers)
         }
       }
 
