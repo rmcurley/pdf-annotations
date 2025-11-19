@@ -3,12 +3,10 @@
 import React, { useState, useCallback } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useAuth } from '@/contexts/auth-context'
 
 interface UploadDocumentModalProps {
   open: boolean
@@ -23,7 +21,6 @@ export function UploadDocumentModal({
   projectId,
   onUploadComplete
 }: UploadDocumentModalProps) {
-  const { user } = useAuth()
   const supabase = createClient()
   const [files, setFiles] = useState<File[]>([])
   const [version, setVersion] = useState<'Draft' | 'Revised Draft' | 'Final'>('Draft')
@@ -33,7 +30,7 @@ export function UploadDocumentModal({
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [progressPercent, setProgressPercent] = useState<number>(0)
 
-  const [pdfjsLib, setPdfjsLib] = React.useState<any | null>(null)
+  const [pdfjsLib, setPdfjsLib] = React.useState<typeof import('pdfjs-dist/legacy/build/pdf') | null>(null)
 
   React.useEffect(() => {
     let mounted = true
@@ -212,10 +209,11 @@ export function UploadDocumentModal({
           if (insertError) throw insertError
 
           successCount++
-        } catch (err: any) {
+        } catch (err) {
           console.error(`Error uploading ${documentName}:`, err)
           const shortName = documentName.length > 50 ? documentName.substring(0, 50) + '...' : documentName
-          errorMessages.push(`"${shortName}": ${err.message || 'Upload failed'}`)
+          const message = err instanceof Error ? err.message : 'Upload failed'
+          errorMessages.push(`"${shortName}": ${message}`)
           errorCount++
         }
       }
@@ -244,9 +242,10 @@ export function UploadDocumentModal({
           setError(errorSummary)
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Upload error:', err)
-      setError(err.message || 'Failed to upload documents')
+      const message = err instanceof Error ? err.message : 'Failed to upload documents'
+      setError(message)
     } finally {
       setUploading(false)
       setUploadProgress('')
@@ -277,7 +276,10 @@ export function UploadDocumentModal({
           {/* Version Tabs */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Version</label>
-            <Tabs value={version} onValueChange={(value: any) => setVersion(value)}>
+            <Tabs
+              value={version}
+              onValueChange={(value) => setVersion(value as typeof version)}
+            >
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="Draft">Draft</TabsTrigger>
                 <TabsTrigger value="Revised Draft">Revised Draft</TabsTrigger>

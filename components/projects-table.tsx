@@ -28,7 +28,6 @@ import { z } from "zod"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SearchInput } from "@/components/search-input"
 import {
@@ -144,7 +143,6 @@ export function ProjectsTable({
       ),
       cell: ({ row }) => {
         const isEditing = editingRowId === row.original.id
-        const isOwner = row.original.is_owner
 
         if (isEditing) {
           return (
@@ -225,7 +223,6 @@ export function ProjectsTable({
       id: "actions",
       cell: ({ row }) => {
         const project = row.original
-        const isOwner = project.is_owner
         const isEditing = editingRowId === row.original.id
 
         if (isEditing) {
@@ -282,7 +279,7 @@ export function ProjectsTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {isOwner && (
+                {project.is_owner && (
                   <>
                     <DropdownMenuItem
                       onClick={() => handleStartEdit(project)}

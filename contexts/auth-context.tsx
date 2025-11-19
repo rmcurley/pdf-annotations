@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  const fetchUserProfile = async (authUser: User): Promise<ExtendedUser> => {
+  const fetchUserProfile = useCallback(async (authUser: User): Promise<ExtendedUser> => {
     try {
       console.log('Fetching profile for user:', authUser.id)
       const { data: profile, error } = await supabase
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Exception fetching user profile:', error)
       return authUser
     }
-  }
+  }, [supabase])
 
   const refreshProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [fetchUserProfile, supabase])
 
   const signOut = async () => {
     try {

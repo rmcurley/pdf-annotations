@@ -106,10 +106,10 @@ export async function POST(request: NextRequest) {
       user: data.user
     })
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Unexpected error in invite-user route:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     )
   }

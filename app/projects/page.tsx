@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { ProjectsTable, ProjectRow } from "@/components/projects-table"
@@ -44,12 +44,6 @@ interface Comment {
   created_at: string
 }
 
-interface ProjectMember {
-  project_id: string
-  user_id: string
-  role: string
-}
-
 export default function ProjectsPage() {
   const { user } = useAuth()
   const supabase = createClient()
@@ -57,7 +51,6 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [allDocuments, setAllDocuments] = useState<Document[]>([])
   const [allComments, setAllComments] = useState<Comment[]>([])
-  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([])
   const [loading, setLoading] = useState(true)
 
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
@@ -65,17 +58,8 @@ export default function ProjectsPage() {
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [updating, setUpdating] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [archiving, setArchiving] = useState(false)
 
-  useEffect(() => {
-    if (user) {
-      fetchData()
-    }
-  }, [user])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -86,7 +70,6 @@ export default function ProjectsPage() {
         .eq('user_id', user?.id)
 
       if (membersError) throw membersError
-      setProjectMembers(membersData || [])
 
       const userProjectIds = (membersData || []).map(m => m.project_id)
 
@@ -153,7 +136,13 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase, user?.id, user?.profile?.role])
+
+  useEffect(() => {
+    if (user) {
+      fetchData()
+    }
+  }, [user, fetchData])
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) {
@@ -168,7 +157,7 @@ export default function ProjectsPage() {
 
     try {
       setCreating(true)
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('projects')
         .insert({
           name: newProjectName.trim(),
@@ -185,9 +174,9 @@ export default function ProjectsPage() {
       setNewProjectName('')
       setNewProjectDescription('')
       fetchData()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating project:', error)
-      toast.error(error.message || 'Failed to create project')
+      toast.error(error instanceof Error ? error.message : 'Failed to create project')
     } finally {
       setCreating(false)
     }
@@ -195,7 +184,6 @@ export default function ProjectsPage() {
 
   const handleUpdateProject = async (projectId: string, updates: { name?: string }) => {
     try {
-      setUpdating(true)
       const { error } = await supabase
         .from('projects')
         .update(updates)
@@ -205,11 +193,9 @@ export default function ProjectsPage() {
 
       toast.success('Project updated successfully!')
       fetchData()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating project:', error)
-      toast.error(error.message || 'Failed to update project')
-    } finally {
-      setUpdating(false)
+      toast.error(error instanceof Error ? error.message : 'Failed to update project')
     }
   }
 
@@ -225,7 +211,6 @@ export default function ProjectsPage() {
 
     if (confirm(message)) {
       try {
-        setDeleting(true)
         const { error } = await supabase
           .from('projects')
           .delete()
@@ -235,18 +220,15 @@ export default function ProjectsPage() {
 
         toast.success('Project deleted successfully!')
         fetchData()
-      } catch (error: any) {
+      } catch (error) {
         console.error('Error deleting project:', error)
-        toast.error(error.message || 'Failed to delete project')
-      } finally {
-        setDeleting(false)
+        toast.error(error instanceof Error ? error.message : 'Failed to delete project')
       }
     }
   }
 
   const handleArchiveProject = async (projectId: string, archived: boolean) => {
     try {
-      setArchiving(true)
       const { error } = await supabase
         .from('projects')
         .update({ archived })
@@ -256,11 +238,9 @@ export default function ProjectsPage() {
 
       toast.success(archived ? 'Project archived successfully!' : 'Project unarchived successfully!')
       fetchData()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error archiving project:', error)
-      toast.error(error.message || 'Failed to archive project')
-    } finally {
-      setArchiving(false)
+      toast.error(error instanceof Error ? error.message : 'Failed to archive project')
     }
   }
 

@@ -120,6 +120,8 @@ type CommentsTableMeta = {
   setEditedComment: (value: string) => void
   saveEdit: () => void
   cancelEdit: () => void
+  setDeleteCommentId?: (id: string | null) => void
+  handleStatusChange?: (commentId: string, newStatus: string) => void
 }
 
 // Separate component for editable cell
@@ -375,10 +377,9 @@ const columns: ColumnDef<TableComment>[] = [
       const comment = row.original
       const currentStatus = comment.comment_status
       const meta = table.options.meta as CommentsTableMeta
-      const anyMeta = table.options.meta as any
       const isEditing = meta.editingCommentId === comment.id
 
-      const hasUpdate = typeof anyMeta?.handleStatusChange === "function"
+      const hasUpdate = typeof meta?.handleStatusChange === "function"
 
       // Hide kebab menu when editing
       if (isEditing) {
@@ -403,7 +404,7 @@ const columns: ColumnDef<TableComment>[] = [
               Edit
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => anyMeta?.setDeleteCommentId?.(comment.id)}
+              onClick={() => meta?.setDeleteCommentId?.(comment.id)}
               className="text-destructive focus:text-destructive focus:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4 mr-2 text-destructive" />
@@ -416,7 +417,7 @@ const columns: ColumnDef<TableComment>[] = [
                 {currentStatus !== "accepted" && (
                   <DropdownMenuItem
                     onClick={() =>
-                      anyMeta.handleStatusChange(comment.id, "accepted")
+                      meta.handleStatusChange?.(comment.id, "accepted")
                     }
                   >
                     <CircleCheck className="h-4 w-4 mr-2 text-emerald-700" />
@@ -426,7 +427,7 @@ const columns: ColumnDef<TableComment>[] = [
                 {currentStatus !== "proposed" && (
                   <DropdownMenuItem
                     onClick={() =>
-                      anyMeta.handleStatusChange(comment.id, "proposed")
+                      meta.handleStatusChange?.(comment.id, "proposed")
                     }
                   >
                     <CircleHelp className="h-4 w-4 mr-2 text-yellow-700" />
@@ -436,7 +437,7 @@ const columns: ColumnDef<TableComment>[] = [
                 {currentStatus !== "rejected" && (
                   <DropdownMenuItem
                     onClick={() =>
-                      anyMeta.handleStatusChange(comment.id, "rejected")
+                      meta.handleStatusChange?.(comment.id, "rejected")
                     }
                   >
                     <CircleX className="h-4 w-4 mr-2 text-red-700" />
@@ -553,6 +554,7 @@ export function CommentsTableModal({
     [onUpdateAnnotation],
   )
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filteredByFilters,
     columns,
@@ -580,7 +582,7 @@ export function CommentsTableModal({
       // extra helpers used by actions cell
       setDeleteCommentId,
       handleStatusChange,
-    } as any,
+    },
   })
 
   const pageSizes = [10, 20, 50, 100]

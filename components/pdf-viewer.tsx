@@ -1,4 +1,6 @@
-'use client'
+"use client"
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState } from 'react'
 import {
@@ -31,17 +33,21 @@ import { SearchInput } from '@/components/search-input'
 const HighlightWrapper = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
->(({ onUpdate: _onUpdate, ...props }, ref) => (
-  <div ref={ref} {...props} />
-))
+>((props, ref) => {
+  const { onUpdate, ...rest } = props
+  void onUpdate
+  return <div ref={ref} {...rest} />
+})
 HighlightWrapper.displayName = 'HighlightWrapper'
 
 const PopupContentWrapper = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
->(({ onUpdate: _onUpdate, ...props }, ref) => (
-  <div ref={ref} {...props} />
-))
+>((props, ref) => {
+  const { onUpdate, ...rest } = props
+  void onUpdate
+  return <div ref={ref} {...rest} />
+})
 PopupContentWrapper.displayName = 'PopupContentWrapper'
 
 interface PdfViewerProps {
@@ -580,13 +586,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
-  const handleAddCommentClick = () => {
-    if (selectedHighlight) {
-      setDrawerOpen(true)
-      setShowAddButton(false)
-    }
-  }
-
   const handleInlineSave = async () => {
     if (!selectedHighlight || !inlineAnnotationText.trim() || inlineSaving) {
       return
@@ -943,7 +942,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   position,
                   content,
                   hideTipAndSelection,
-                  transformSelection
                 ) => {
                   console.log('Selection finished:', { position, content })
 

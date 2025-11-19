@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
@@ -66,11 +66,7 @@ export default function Page() {
   const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null)
   const [deleteDocumentAnnotationCount, setDeleteDocumentAnnotationCount] = useState(0)
 
-  useEffect(() => {
-    fetchData()
-  }, [projectId])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -214,7 +210,7 @@ export default function Page() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [projectId])
 
   const handleUploadComplete = () => {
     fetchData()
@@ -320,7 +316,7 @@ export default function Page() {
     }
   }
 
-  const handleUpdateAnnotation = async (commentId: string, updates: Partial<TableComment>) => {
+  const handleUpdateAnnotation = useCallback(async (commentId: string, updates: Partial<TableComment>) => {
     try {
       const { error } = await supabase
         .from('comments')
@@ -335,7 +331,11 @@ export default function Page() {
       console.error('Error updating annotation:', error)
       alert('Failed to update annotation')
     }
-  }
+  }, [fetchData])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   const handleDeleteComment = async (commentId: string) => {
     try {

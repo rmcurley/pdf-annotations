@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
@@ -53,7 +53,7 @@ import {
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { MoreVertical, Edit, Trash2, Shield, User as UserIcon, Check, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { MoreVertical, Edit, Trash2, Shield, Check, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { SiteHeader } from '@/components/site-header'
@@ -71,12 +71,6 @@ interface User {
 interface Project {
   id: string
   name: string
-}
-
-interface ProjectMember {
-  project_id: string
-  user_id: string
-  role: string
 }
 
 // Admin page with user management, search, and sorting
@@ -105,22 +99,7 @@ export default function AdminPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editRole, setEditRole] = useState('')
 
-  useEffect(() => {
-    // Check if user is admin
-    if (user && user.profile?.role !== 'admin') {
-      toast.error('Access denied. Admin role required.')
-      router.push('/projects')
-      return
-    }
-
-    if (user) {
-      fetchUsers()
-      fetchProjects()
-      fetchSidebarData()
-    }
-  }, [user])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -136,9 +115,9 @@ export default function AdminPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('projects')
@@ -150,9 +129,9 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error fetching projects:', error)
     }
-  }
+  }, [supabase])
 
-  const fetchSidebarData = async () => {
+  const fetchSidebarData = useCallback(async () => {
     try {
       const { data: projectsData } = await supabase
         .from('projects')
@@ -169,7 +148,22 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error fetching sidebar data:', error)
     }
-  }
+  }, [supabase])
+
+  useEffect(() => {
+    // Check if user is admin
+    if (user && user.profile?.role !== 'admin') {
+      toast.error('Access denied. Admin role required.')
+      router.push('/projects')
+      return
+    }
+
+    if (user) {
+      fetchUsers()
+      fetchProjects()
+      fetchSidebarData()
+    }
+  }, [user, fetchUsers, fetchProjects, fetchSidebarData, router])
 
   const fetchUserProjects = async (userId: string) => {
     try {
@@ -218,9 +212,9 @@ export default function AdminPage() {
       setDeleteDialogOpen(false)
       setSelectedUser(null)
       fetchUsers()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting user:', error)
-      toast.error(error.message || 'Failed to delete user')
+      toast.error(error instanceof Error ? error.message : 'Failed to delete user')
     }
   }
 
@@ -267,9 +261,9 @@ export default function AdminPage() {
       setEditDialogOpen(false)
       setSelectedUser(null)
       fetchUsers()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating user:', error)
-      toast.error(error.message || 'Failed to update user')
+      toast.error(error instanceof Error ? error.message : 'Failed to update user')
     }
   }
 

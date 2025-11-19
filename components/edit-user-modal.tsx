@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { IconUser } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -59,17 +58,7 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
   const [saving, setSaving] = React.useState(false)
 
   // Load user data and projects when modal opens
-  React.useEffect(() => {
-    if (open && user) {
-      setFirstName(user.first_name || "")
-      setLastName(user.last_name || "")
-      setRole(user.role || "member")
-      setSelectedProjectIds(user.project_ids || [])
-      loadProjects()
-    }
-  }, [open, user])
-
-  const loadProjects = async () => {
+  const loadProjects = React.useCallback(async () => {
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -85,7 +74,17 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
+
+  React.useEffect(() => {
+    if (open && user) {
+      setFirstName(user.first_name || "")
+      setLastName(user.last_name || "")
+      setRole(user.role || "member")
+      setSelectedProjectIds(user.project_ids || [])
+      loadProjects()
+    }
+  }, [open, user, loadProjects])
 
   const handleProjectToggle = (projectId: string) => {
     setSelectedProjectIds(prev =>
@@ -142,9 +141,9 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
       if (onUserUpdated) {
         onUserUpdated()
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating user:', error)
-      toast.error(error.message || 'Failed to update user')
+      toast.error(error instanceof Error ? error.message : 'Failed to update user')
     } finally {
       setSaving(false)
     }

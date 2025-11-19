@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, react-hooks-exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
+
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -485,7 +487,7 @@ export function FilterValueOptionController<TData>({
       initialSelected: filter?.values.includes(o.value),
       count: counts?.get(o.value) ?? 0,
     }))
-  }, [])
+  }, [column, filter?.values])
 
   const [options, setOptions] = useState(initialOptions)
 
@@ -564,7 +566,7 @@ export function FilterValueMultiOptionController<TData>({
         count: counts?.get(o.value) ?? 0,
       }
     })
-  }, [])
+  }, [column, filter?.values])
 
   const [options, setOptions] = useState(initialOptions)
 

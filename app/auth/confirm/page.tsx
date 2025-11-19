@@ -18,7 +18,7 @@ export default function ConfirmPage() {
 
       if (accessToken && refreshToken) {
         // Set the session using the tokens
-        const { data, error } = await supabase.auth.setSession({
+        const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         })

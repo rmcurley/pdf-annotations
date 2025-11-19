@@ -57,15 +57,6 @@ interface AdminModalProps {
   onOpenChange: (open: boolean) => void
 }
 
-interface User {
-  id: string
-  email: string
-  first_name: string | null
-  last_name: string | null
-  role: string
-  created_at: string
-}
-
 interface UserRow {
   id: string
   first_name: string
@@ -221,13 +212,7 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const [selectedUser, setSelectedUser] = React.useState<UserRow | null>(null)
 
   // Load users and projects when modal opens
-  React.useEffect(() => {
-    if (open) {
-      loadData()
-    }
-  }, [open])
-
-  const loadData = async () => {
+  const loadData = React.useCallback(async () => {
     setLoading(true)
     try {
       // Fetch all users from users table
@@ -267,7 +252,13 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase])
+
+  React.useEffect(() => {
+    if (open) {
+      loadData()
+    }
+  }, [open, loadData])
 
   const handleInviteUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -293,24 +284,24 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
 
       // Refresh the user list to show the new invited user
       loadData()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error inviting user:', error)
-      toast.error(error.message || 'Failed to send invitation')
+      toast.error(error instanceof Error ? error.message : 'Failed to send invitation')
     } finally {
       setInviting(false)
     }
   }
 
-  const handleStartEdit = (user: UserRow) => {
+  const handleStartEdit = React.useCallback((user: UserRow) => {
     setSelectedUser(user)
     setEditModalOpen(true)
-  }
+  }, [])
 
   const handleUserUpdated = () => {
     loadData()
   }
 
-  const handleDeleteUser = async (userId: string) => {
+  const handleDeleteUser = React.useCallback(async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       return
     }
@@ -332,18 +323,18 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
 
       toast.success('User deleted successfully')
       loadData()
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting user:', error)
-      toast.error(error.message || 'Failed to delete user')
+      toast.error(error instanceof Error ? error.message : 'Failed to delete user')
     }
-  }
+  }, [loadData, supabase])
 
   const columns = React.useMemo(
     () => createColumns(
       handleStartEdit,
       handleDeleteUser
     ),
-    []
+    [handleStartEdit, handleDeleteUser]
   )
 
   const table = useReactTable({

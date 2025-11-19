@@ -33,6 +33,7 @@ import {
   SortingState,
   useReactTable,
   VisibilityState,
+  type Row,
 } from "@tanstack/react-table"
 import {
   IconChevronDown,
@@ -48,7 +49,6 @@ import {
 import { CircleCheck, CircleHelp, CircleX, ChevronUp, ChevronDown, Plus, Check, X, Pencil, Trash2, Table as TableIcon, Download } from "lucide-react"
 import { z } from "zod"
 
-import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -154,16 +154,6 @@ function DragHandle({ id }: { id: string }) {
   )
 }
 
-// Get initials from name
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-}
-
 // Reviewer cell component with dropdown
 interface ReviewerCellProps {
   documentId: string
@@ -238,7 +228,7 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
     fetchProjectUsers()
   }, [projectId])
 
-  const handleToggleReviewer = (userId: string, userEmail: string) => {
+  const handleToggleReviewer = (userId: string) => {
     const isCurrentlyAssigned = reviewers.includes(userId)
     const newReviewers = isCurrentlyAssigned
       ? reviewers.filter(id => id !== userId)
@@ -292,7 +282,7 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
             <DropdownMenuCheckboxItem
               key={user.id}
               checked={reviewers.includes(user.id)}
-              onCheckedChange={() => handleToggleReviewer(user.id, user.email)}
+              onCheckedChange={() => handleToggleReviewer(user.id)}
             >
               {getUserDisplayName(user)}
             </DropdownMenuCheckboxItem>
@@ -498,7 +488,12 @@ const createColumns = (): ColumnDef<DocumentRow>[] => {
 
       return isEditing ? (
         <div onClick={(e) => e.stopPropagation()}>
-          <Tabs value={meta.editedVersion} onValueChange={(value: any) => meta.setEditedVersion(value)}>
+          <Tabs
+            value={meta.editedVersion}
+            onValueChange={(value) =>
+              meta.setEditedVersion(value as DocumentsTableMeta["editedVersion"])
+            }
+          >
             <TabsList className="h-8">
               <TabsTrigger value="Draft" className="text-xs px-2">Draft</TabsTrigger>
               <TabsTrigger value="Revised Draft" className="text-xs px-2">Revised</TabsTrigger>
@@ -647,21 +642,8 @@ interface DocumentsTableProps {
 }
 
 // Draggable row component
-function DraggableRow({
-  row,
-  router,
-}: {
-  row: any
-  router: ReturnType<typeof useRouter>
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+function DraggableRow({ row }: { row: Row<DocumentRow> }) {
+  const { setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.original.id,
   })
 
@@ -677,7 +659,7 @@ function DraggableRow({
       style={style}
       data-state={row.getIsSelected() && "selected"}
     >
-      {row.getVisibleCells().map((cell: any) => (
+      {row.getVisibleCells().map((cell) => (
         <TableCell
           key={cell.id}
           style={{
@@ -695,7 +677,6 @@ function DraggableRow({
 
 export function DocumentsTable({ data, projectId, onAddDocument, onTableView, onReviewersChange, onUpdateDocument, onDeleteDocument }: DocumentsTableProps) {
   const router = useRouter()
-  const isMobile = useIsMobile()
   const { user } = useAuth()
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -1071,7 +1052,7 @@ export function DocumentsTable({ data, projectId, onAddDocument, onTableView, on
                   >
                     {table.getRowModel().rows?.length ? (
                       table.getRowModel().rows.map((row) => (
-                        <DraggableRow key={row.id} row={row} router={router} />
+                        <DraggableRow key={row.id} row={row} />
                       ))
                     ) : (
                       <TableRow>

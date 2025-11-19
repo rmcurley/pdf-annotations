@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
@@ -14,6 +14,13 @@ import { PdfViewerWrapper } from '@/components/pdf-viewer-wrapper'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { IHighlight, NewHighlight } from 'react-pdf-highlighter'
+
+type HighlightPosition = IHighlight['position']
+type ExtendedHighlightComment = IHighlight['comment'] & {
+  type: string
+  status: string
+  user_name: string
+}
 
 interface Document {
   id: string
@@ -42,7 +49,7 @@ interface Comment {
   comment_type: string
   comment_status: string
   highlighted_text: string | null
-  highlight_position: any
+  highlight_position: HighlightPosition | null
   created_at: string
   updated_at: string
   user_id: string | null
@@ -50,6 +57,7 @@ interface Comment {
     first_name: string | null
     last_name: string | null
     email: string
+    avatar_url?: string | null
   }
 }
 
@@ -75,11 +83,6 @@ export default function DocumentPage() {
 
   const [tableViewOpen, setTableViewOpen] = useState(false)
 
-  useEffect(() => {
-    fetchDocument()
-    fetchComments()
-  }, [documentId])
-
   // Separate effect for body overflow to ensure DOM is ready
   useEffect(() => {
     // Wait for next tick to ensure body is available
@@ -104,13 +107,8 @@ export default function DocumentPage() {
       ? comments.filter(c => filteredCommentIds.includes(c.id))
       : comments
 
-    const newHighlights: IHighlight[] = commentsToShow.map((comment) => ({
-      id: comment.id,
-      content: {
-        text: comment.highlighted_text || '',
-      },
-      position: comment.highlight_position || {},
-      comment: {
+    const newHighlights: IHighlight[] = commentsToShow.map((comment) => {
+      const commentMeta: ExtendedHighlightComment = {
         text: comment.comment,
         emoji: '',
         type: comment.comment_type,
@@ -118,12 +116,21 @@ export default function DocumentPage() {
         user_name: comment.users?.first_name && comment.users?.last_name
           ? `${comment.users.first_name} ${comment.users.last_name}`
           : comment.users?.email?.split('@')[0] || 'Unknown User',
-      } as any,
-    }))
+      }
+
+      return {
+        id: comment.id,
+        content: {
+          text: comment.highlighted_text || '',
+        },
+        position: comment.highlight_position ?? ({} as HighlightPosition),
+        comment: commentMeta,
+      }
+    })
     setHighlights(newHighlights)
   }, [comments, filteredCommentIds])
 
-  const fetchDocument = async () => {
+  const fetchDocument = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('documents')
@@ -171,9 +178,9 @@ export default function DocumentPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [documentId, supabase])
 
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     try {
       const { data: commentsData, error } = await supabase
         .from('comments')
@@ -193,7 +200,12 @@ export default function DocumentPage() {
 
       // Fetch user data for comments that have a user_id
       const userIds = [...new Set(commentsData?.map(c => c.user_id).filter(Boolean) || [])]
-      let usersMap = new Map()
+      const usersMap = new Map<string, {
+        first_name: string | null
+        last_name: string | null
+        email: string
+        avatar_url?: string | null
+      }>()
 
       if (userIds.length > 0) {
         const { data: usersData, error: usersError } = await supabase
@@ -215,15 +227,17 @@ export default function DocumentPage() {
       })) || []
 
       setComments(commentsWithUsers)
-    } catch (error: any) {
-      console.error('Error fetching comments:', {
-        message: error?.message,
-        stack: error?.stack
-      })
+    } catch (error) {
+      console.error('Error fetching comments:', error)
       // Set empty comments array to prevent UI issues
       setComments([])
     }
-  }
+  }, [documentId, supabase])
+
+  useEffect(() => {
+    fetchDocument()
+    fetchComments()
+  }, [documentId, fetchDocument, fetchComments])
 
   const handleDeleteComment = async (commentId: string) => {
     try {
@@ -333,22 +347,6 @@ export default function DocumentPage() {
       setScrollToPdfId(null) // Don't scroll PDF when clicking on a highlight
       setScrollToCommentId(highlightId) // Scroll comment list to this comment
     }
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    })
-  }
-
-  const formatFileSize = (bytes: number | null) => {
-    if (!bytes) return 'N/A'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
   }
 
   if (loading) {

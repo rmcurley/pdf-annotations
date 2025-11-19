@@ -7,7 +7,6 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { AvatarImage } from '@/components/ui/avatar'
 import { SearchInput } from '@/components/search-input'
 import {
   Tooltip,
@@ -15,7 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { getCommentUserDisplayName, getCommentUserInitials } from '@/lib/comment-utils'
+import { getCommentUserDisplayName } from '@/lib/comment-utils'
 import {
   MessageSquare,
   MessageCircle,
@@ -64,6 +63,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import type { ScaledPosition } from 'react-pdf-highlighter'
 
 interface Comment {
   id: string
@@ -77,7 +77,7 @@ interface Comment {
   comment_type: string
   comment_status: string
   highlighted_text: string | null
-  highlight_position: any
+  highlight_position: ScaledPosition | null
   created_at: string
   updated_at: string
   user_id: string | null
@@ -88,6 +88,12 @@ interface Comment {
     avatar_url?: string | null
   }
   _filter_user?: string
+}
+
+type StatusColor = {
+  badge: string
+  icon: string
+  bg: string
 }
 
 interface CommentsPanelProps {
@@ -126,8 +132,8 @@ function CommentCard({
   onEditClick?: (comment: Comment) => void
   onDeleteClick?: (comment: Comment) => void
   onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => Promise<void>
-  getTypeIcon: (type: string) => any
-  getStatusColor: (status: string) => any
+  getTypeIcon: (type: string) => React.ComponentType<React.SVGProps<SVGSVGElement>>
+  getStatusColor: (status: string) => StatusColor
   formatStatus: (status: string) => string
   formatDate: (dateString: string) => string
 }) {
@@ -141,7 +147,7 @@ function CommentCard({
   const [editedPage, setEditedPage] = useState(comment.page_number?.toString() || '')
   const [showCopyButton, setShowCopyButton] = useState(false)
   const annotationId = formatAnnotationId(comment)
-  const TypeIcon = getTypeIcon(isEditing ? editedType : comment.comment_type)
+  const TypeIconComponent = getTypeIcon(isEditing ? editedType : comment.comment_type)
   const shortId = annotationId
   const statusColors = getStatusColor(isEditing ? editedStatus : comment.comment_status)
 
@@ -208,7 +214,9 @@ function CommentCard({
           <div className="flex items-center gap-3">
             {/* Type Icon */}
             <div className={`w-6 h-6 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
-              <TypeIcon className={`w-3.5 h-3.5 ${statusColors.icon}`} />
+              {React.createElement(TypeIconComponent, {
+                className: `w-3.5 h-3.5 ${statusColors.icon}`,
+              })}
             </div>
             {/* Comment ID */}
             <div className="font-semibold text-base">
@@ -340,6 +348,7 @@ function CommentCard({
                     <DropdownMenuItem onClick={(e) => {
                       e.stopPropagation()
                       setIsEditing(true)
+                      onEditClick?.(comment)
                     }}>
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
@@ -503,7 +512,7 @@ function CommentCard({
                     onMouseEnter={() => setShowCopyButton(true)}
                     onMouseLeave={() => setShowCopyButton(false)}
                   >
-                    "{comment.highlighted_text}"
+                    &quot;{comment.highlighted_text}&quot;
                     {showCopyButton && (
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -604,7 +613,7 @@ function CommentCard({
                         Selected Text
                       </div>
                       <div className="bg-yellow-500/10 border-l-2 border-yellow-500 pl-3 py-2 text-sm italic">
-                        "{comment.highlighted_text}"
+                        &quot;{comment.highlighted_text}&quot;
                       </div>
                     </div>
                   )}
@@ -723,7 +732,7 @@ export function CommentsPanel({
     onFilterChange(filteredComments.map((comment) => comment.id))
   }, [filteredComments, onFilterChange])
 
-  const getTypeIcon = (type: string) => {
+  const getTypeIcon = (type: string): React.ComponentType<React.SVGProps<SVGSVGElement>> => {
     switch (type.toLowerCase()) {
       case 'comment':
         return MessageCircle
@@ -734,7 +743,7 @@ export function CommentsPanel({
     }
   }
 
-const getStatusColor = (status: string) => {
+const getStatusColor = (status: string): StatusColor => {
     switch (status.toLowerCase()) {
       case 'proposed':
         return {

@@ -94,9 +94,10 @@ export function AccountModal({ open, onOpenChange }: AccountModalProps) {
 
       console.log('Public URL:', publicUrl)
       setAvatarUrl(publicUrl)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error uploading avatar:', error)
-      alert(`Error uploading avatar: ${error.message || 'Unknown error'}. Please check the browser console for details.`)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Error uploading avatar: ${message}. Please check the browser console for details.`)
     } finally {
       setUploading(false)
     }
@@ -124,9 +125,10 @@ export function AccountModal({ open, onOpenChange }: AccountModalProps) {
       }
 
       onOpenChange(false)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating profile:', error)
-      alert(`Error updating profile: ${error.message || error}`)
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Error updating profile: ${message}`)
     } finally {
       setSaving(false)
     }

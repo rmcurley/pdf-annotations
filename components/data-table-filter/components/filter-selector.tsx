@@ -45,9 +45,9 @@ interface FilterSelectorProps<TData> {
   locale?: Locale
 }
 
-export const FilterSelector = memo(__FilterSelector) as typeof __FilterSelector
+export const FilterSelector = memo(FilterSelectorComponent) as typeof FilterSelectorComponent
 
-function __FilterSelector<TData>({
+function FilterSelectorComponent<TData>({
   filters,
   columns,
   actions,
@@ -66,10 +66,17 @@ function __FilterSelector<TData>({
 
   const hasFilters = filters.length > 0
 
+  const handlePropertyChange = useCallback(
+    (nextProperty?: string) => {
+      setProperty(nextProperty)
+      setValue('')
+    },
+    [setProperty],
+  )
+
   useEffect(() => {
     if (property && inputRef) {
       inputRef.current?.focus()
-      setValue('')
     }
   }, [property])
 
@@ -78,7 +85,7 @@ function __FilterSelector<TData>({
   }, [open])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: need filters to be updated
-  const content = useMemo(
+const content = useMemo(
     () =>
       property && column ? (
         <FilterValueController
@@ -111,7 +118,7 @@ function __FilterSelector<TData>({
                 <FilterableColumn
                   key={column.id}
                   column={column}
-                  setProperty={setProperty}
+                  setProperty={handlePropertyChange}
                 />
               ))}
               <QuickSearchFilters
@@ -119,14 +126,12 @@ function __FilterSelector<TData>({
                 filters={filters}
                 columns={columns}
                 actions={actions}
-                strategy={strategy}
-                locale={locale}
               />
             </CommandGroup>
           </CommandList>
         </Command>
       ),
-    [property, column, filter, filters, columns, actions, value],
+    [property, column, filter, filters, columns, actions, value, strategy, locale, handlePropertyChange],
   )
 
   return (
@@ -134,7 +139,7 @@ function __FilterSelector<TData>({
       open={open}
       onOpenChange={async (value) => {
         setOpen(value)
-        if (!value) setTimeout(() => setProperty(undefined), 100)
+        if (!value) setTimeout(() => handlePropertyChange(undefined), 100)
       }}
     >
       <PopoverTrigger asChild>
@@ -227,24 +232,18 @@ interface QuickSearchFiltersProps<TData> {
   filters: FiltersState
   columns: Column<TData>[]
   actions: DataTableFilterActions
-  strategy: FilterStrategy
-  locale?: Locale
 }
 
 export const QuickSearchFilters = memo(
-  __QuickSearchFilters,
-) as typeof __QuickSearchFilters
+  QuickSearchFiltersComponent,
+) as typeof QuickSearchFiltersComponent
 
-function __QuickSearchFilters<TData>({
+function QuickSearchFiltersComponent<TData>({
   search,
   filters,
   columns,
   actions,
-  strategy,
-  locale = 'en',
 }: QuickSearchFiltersProps<TData>) {
-  if (!search || search.trim().length < 2) return null
-
   const cols = useMemo(
     () =>
       columns.filter((c) =>
@@ -252,6 +251,8 @@ function __QuickSearchFilters<TData>({
       ),
     [columns],
   )
+
+  if (!search || search.trim().length < 2) return null
 
   return (
     <>

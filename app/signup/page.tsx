@@ -24,7 +24,7 @@ export default function SignupPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -42,6 +42,7 @@ export default function SignupPage() {
         router.push('/login')
       }
     } catch (error) {
+      console.error('Signup failed:', error)
       toast.error('An unexpected error occurred')
     } finally {
       setLoading(false)

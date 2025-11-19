@@ -22,7 +22,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -35,6 +35,7 @@ export default function LoginPage() {
         router.refresh()
       }
     } catch (error) {
+      console.error('Login failed:', error)
       toast.error('An unexpected error occurred')
     } finally {
       setLoading(false)
@@ -83,7 +84,7 @@ export default function LoginPage() {
         </CardContent>
         <CardFooter>
           <p className="text-sm text-muted-foreground text-center w-full">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-primary hover:underline">
               Sign up
             </Link>

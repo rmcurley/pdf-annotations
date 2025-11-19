@@ -3,14 +3,15 @@
 import React, { useMemo, useState, useCallback } from 'react'
 import { Calendar, dateFnsLocalizer, View } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay, startOfDay, endOfDay } from 'date-fns'
+import { enUS } from 'date-fns/locale/en-US'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Flag, ExternalLink, Calendar as CalendarIcon, User } from 'lucide-react'
+import { Flag, ExternalLink, Calendar as CalendarIcon } from 'lucide-react'
 
 const locales = {
-  'en-US': require('date-fns/locale/en-US')
+  'en-US': enUS,
 }
 
 const localizer = dateFnsLocalizer({
