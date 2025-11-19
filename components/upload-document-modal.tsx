@@ -115,7 +115,7 @@ export function UploadDocumentModal({
       // Load the PDF document
       if (!pdfjsLib) {
         setError('PDF parser not ready. Please try again in a moment.')
-        return
+        return null
       }
 
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
@@ -222,7 +222,6 @@ export function UploadDocumentModal({
 
       // Reset form
       setFiles([])
-      setDocumentPrefix('')
       setVersion('Draft')
       setUploadProgress('')
       setProgressPercent(0)

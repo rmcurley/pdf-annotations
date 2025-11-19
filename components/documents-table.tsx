@@ -172,8 +172,30 @@ interface ReviewerCellProps {
   onReviewersChange: (documentId: string, newReviewers: string[]) => void
 }
 
+type ReviewerUser = {
+  id: string
+  email: string
+  first_name: string | null
+  last_name: string | null
+  avatar_url: string | null
+}
+
+const getUserDisplayName = (user: ReviewerUser) => {
+  if (user.first_name || user.last_name) {
+    return [user.first_name, user.last_name].filter(Boolean).join(" ").trim()
+  }
+  return user.email
+}
+
+const getUserInitials = (user: ReviewerUser) => {
+  if (user.first_name || user.last_name) {
+    return [user.first_name?.[0], user.last_name?.[0]].filter(Boolean).join("").toUpperCase() || user.email[0]?.toUpperCase() || "?"
+  }
+  return user.email.slice(0, 2).toUpperCase()
+}
+
 function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: ReviewerCellProps) {
-  const [allUsers, setAllUsers] = React.useState<Array<{ id: string; email: string; first_name: string | null; last_name: string | null }>>([])
+  const [allUsers, setAllUsers] = React.useState<ReviewerUser[]>([])
   const [loading, setLoading] = React.useState(false)
 
   React.useEffect(() => {
@@ -225,27 +247,10 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
     onReviewersChange(documentId, newReviewers)
   }
 
-  const displayUsers = allUsers.filter(user => reviewers.includes(user.id))
-
-  const getUserDisplayName = (user: { first_name: string | null; last_name: string | null; email: string }) => {
-    if (user.first_name && user.last_name) {
-      return `${user.first_name} ${user.last_name}`
-    }
-    if (user.first_name) return user.first_name
-    if (user.last_name) return user.last_name
-    return user.email
-  }
-
-  const getUserInitials = (user: { first_name: string | null; last_name: string | null; email: string }) => {
-    if (user.first_name && user.last_name) {
-      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
-    }
-    if (user.first_name) return user.first_name.slice(0, 2).toUpperCase()
-    return user.email.slice(0, 2).toUpperCase()
-  }
+  const displayUsers = React.useMemo(() => allUsers.filter(user => reviewers.includes(user.id)), [allUsers, reviewers])
 
   return (
-    <DropdownMenu>
+  <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <div className="flex items-center gap-2 cursor-pointer" onClick={(e) => e.stopPropagation()}>
           {reviewers.length > 0 && displayUsers.length > 0 ? (

@@ -754,7 +754,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const highlightTransform = (
     highlight: IHighlight,
     index: number,
-    setTip: (highlight: IHighlight, callback: (highlight: IHighlight) => JSX.Element) => void,
+    setTip: (highlight: IHighlight, callback: (highlight: IHighlight) => React.ReactElement) => void,
     hideTip: () => void,
     viewportToScaled: (rect: { x: number; y: number }) => { x: number; y: number },
     screenshot: (position: ScaledPosition) => string,
@@ -773,7 +773,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     const component = highlight.comment?.text ? (
       <Highlight
         isScrolledTo={isSelected || isScrolledTo}
-        position={highlight.position}
+        position={highlight.position as any}
         comment={highlight.comment}
         onClick={() => {
           if (onHighlightClick && highlight.id) {
@@ -782,16 +782,29 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         }}
       />
     ) : (
-      <AreaHighlight
-        isScrolledTo={isSelected || isScrolledTo}
-        highlight={highlight}
-        onChange={() => {}}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => {
           if (onHighlightClick && highlight.id) {
             onHighlightClick(highlight.id)
           }
         }}
-      />
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            if (onHighlightClick && highlight.id) {
+              onHighlightClick(highlight.id)
+            }
+          }
+        }}
+      >
+        <AreaHighlight
+          isScrolledTo={isSelected || isScrolledTo}
+          highlight={highlight as any}
+          onChange={() => {}}
+        />
+      </div>
     )
 
     const highlightWrapper = (
@@ -865,7 +878,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         }
         onMouseOver={(popupContent) => setTip(highlight, () => popupContent)}
         onMouseOut={hideTip}
-        key={index}
       >
         {highlightWrapper}
       </Popup>
@@ -947,7 +959,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
                   return <div />
                 }}
-                highlightTransform={highlightTransform}
+                highlightTransform={highlightTransform as any}
                 highlights={draftHighlight ? [...highlights, draftHighlight] : highlights}
               />
                 </div>
@@ -1157,7 +1169,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     variant="ghost"
                     size="icon"
                     onClick={handleNextMatch}
-                    disabled={currentMatch >= searchMatches}
+                    disabled={currentMatch >= searchMatches.length}
                     className="h-6 w-6"
                   >
                     <ChevronDown className="w-3 h-3" />
