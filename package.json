@@ -46,7 +46,6 @@
     "pdfjs-dist": "^3.11.174",
     "react": "19.2.0",
     "react-big-calendar": "^1.19.4",
-    "react-day-picker": "^8.10.1",
     "react-dom": "19.2.0",
     "react-pdf-highlighter": "^6.1.0",
     "recharts": "^2.15.4",

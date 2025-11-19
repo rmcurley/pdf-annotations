@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any, react-hooks-exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Command,
@@ -19,11 +18,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { isEqual } from 'date-fns'
 import { format } from 'date-fns'
-import type { DateRange } from 'react-day-picker'
 import { Ellipsis } from 'lucide-react'
 import {
   cloneElement,
@@ -48,6 +46,7 @@ import { take } from '../lib/array'
 import { createNumberRange } from '../lib/helpers'
 import { type Locale, t } from '../lib/i18n'
 import { DebouncedInput } from '../ui/debounced-input'
+
 
 interface FilterValueProps<TData, TType extends ColumnDataType> {
   filter: FilterModel<TType>
@@ -632,39 +631,71 @@ export function FilterValueDateController<TData>({
   column,
   actions,
 }: FilterValueControllerProps<TData, 'date'>) {
-  const [date, setDate] = useState<DateRange | undefined>({
-    from: filter?.values[0] ?? new Date(),
-    to: filter?.values[1] ?? undefined,
-  })
+  const [startInput, setStartInput] = useState('')
+  const [endInput, setEndInput] = useState('')
 
-  function changeDateRange(value: DateRange | undefined) {
-    const start = value?.from
-    const end =
-      start && value && value.to && !isEqual(start, value.to)
-        ? value.to
-        : undefined
+  useEffect(() => {
+    const start = filter?.values[0]
+    const end = filter?.values[1]
+    setStartInput(start ? format(start, 'yyyy-MM-dd') : '')
+    setEndInput(end ? format(end, 'yyyy-MM-dd') : '')
+  }, [filter?.values])
 
-    setDate({ from: start, to: end })
+  const applyDates = useCallback(
+    (nextStart: string, nextEnd: string) => {
+      setStartInput(nextStart)
+      setEndInput(nextEnd)
 
-    const isRange = start && end
-    const newValues = isRange ? [start, end] : start ? [start] : []
+      const startDate = nextStart ? new Date(`${nextStart}T00:00:00`) : undefined
+      const endDate = nextEnd ? new Date(`${nextEnd}T00:00:00`) : undefined
 
-    actions.setFilterValue(column, newValues)
+      const newValues =
+        startDate && endDate
+          ? [startDate, endDate]
+          : startDate
+          ? [startDate]
+          : []
+
+      actions.setFilterValue(column, newValues)
+    },
+    [actions, column],
+  )
+
+  const clearDates = () => {
+    setStartInput('')
+    setEndInput('')
+    actions.setFilterValue(column, [])
   }
 
   return (
     <Command>
       <CommandList className="max-h-fit">
-        <CommandGroup>
-          <div>
-            <Calendar
-              initialFocus
-              mode="range"
-              defaultMonth={date?.from}
-              selected={date}
-              onSelect={changeDateRange}
-              numberOfMonths={1}
+        <CommandGroup className="space-y-3">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Start date</label>
+            <Input
+              type="date"
+              value={startInput}
+              onChange={(e) => applyDates(e.target.value, endInput)}
             />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">End date</label>
+            <Input
+              type="date"
+              value={endInput}
+              onChange={(e) => applyDates(startInput, e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={clearDates}
+            >
+              Clear
+            </Button>
           </div>
         </CommandGroup>
       </CommandList>
