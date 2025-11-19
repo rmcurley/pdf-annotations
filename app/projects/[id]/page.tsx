@@ -8,7 +8,7 @@ import { DocumentsTable, DocumentRow } from "@/components/documents-table"
 import { SectionCards } from "@/components/section-cards"
 import { SiteHeader } from "@/components/site-header"
 import { UploadDocumentModal } from "@/components/upload-document-modal"
-import { CommentsTableModal } from "@/components/comments-table-modal"
+import { CommentsTableModal, type TableComment } from "@/components/comments-table-modal"
 import {
   SidebarInset,
   SidebarProvider,
@@ -50,25 +50,7 @@ interface CommentSummary {
   created_at: string
 }
 
-interface DetailedComment {
-  id: string
-  annotation_id?: string | null
-  document_id: string
-  document_name?: string
-  section_number?: string | null
-  page_number?: number | null
-  comment: string
-  comment_type: string
-  comment_status: string
-  highlighted_text: string | null
-  created_at: string
-  users?: {
-    first_name: string | null
-    last_name: string | null
-    email: string
-    avatar_url?: string | null
-  } | null
-}
+type DetailedComment = TableComment
 
 export default function Page() {
   const params = useParams()
@@ -79,7 +61,7 @@ export default function Page() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [allDocuments, setAllDocuments] = useState<Document[]>([])
   const [comments, setComments] = useState<CommentSummary[]>([])
-  const [allCommentsForTable, setAllCommentsForTable] = useState<DetailedComment[]>([])
+  const [allCommentsForTable, setAllCommentsForTable] = useState<TableComment[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [tableViewOpen, setTableViewOpen] = useState(false)
@@ -191,14 +173,16 @@ export default function Page() {
           // Fetch user data separately for each comment
           const commentsWithUsers = await Promise.all(
             (fullCommentsData || []).map(async (comment) => {
-              const baseComment: DetailedComment = {
-                ...comment,
-                highlighted_text: comment.highlighted_text ?? null,
-                section_number: comment.section_number ?? null,
-                page_number: comment.page_number ?? null,
-                comment: comment.comment ?? '',
+              const baseComment: TableComment = {
+                id: comment.id,
+                annotation_id: comment.annotation_id ?? null,
                 comment_type: comment.comment_type ?? 'comment',
                 comment_status: comment.comment_status ?? 'proposed',
+                highlighted_text: comment.highlighted_text ?? null,
+                comment: comment.comment ?? '',
+                section_number: comment.section_number ?? null,
+                page_number: comment.page_number ?? null,
+                created_at: comment.created_at,
               }
 
               if (comment.user_id) {
@@ -210,7 +194,14 @@ export default function Page() {
 
                 return {
                   ...baseComment,
-                  users: userData,
+                  users: userData
+                    ? {
+                        first_name: userData.first_name ?? null,
+                        last_name: userData.last_name ?? null,
+                        email: userData.email,
+                        avatar_url: userData.avatar_url ?? null,
+                      }
+                    : undefined,
                 }
               }
 
@@ -464,3 +455,6 @@ export default function Page() {
     </SidebarProvider>
   )
 }
+
+
+

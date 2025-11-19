@@ -84,7 +84,7 @@ import {
 } from "@/lib/comment-filter-config"
 import { getCommentUserDisplayName } from "@/lib/comment-utils"
 
-interface Comment {
+export interface TableComment {
   id: string
   annotation_id?: string | null
   comment_type: string
@@ -106,9 +106,9 @@ interface Comment {
 interface CommentsTableModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  comments: Comment[]
+  comments: TableComment[]
   onDelete?: (commentId: string) => void
-  onUpdateAnnotation?: (commentId: string, updates: Partial<Comment>) => void
+  onUpdateAnnotation?: (commentId: string, updates: Partial<TableComment>) => void
   projectName?: string
   documentName?: string
 }
@@ -131,7 +131,7 @@ function EditableCommentCell({
   onSave,
   onCancel,
 }: {
-  comment: Comment
+  comment: TableComment
   isEditing: boolean
   editedValue: string
   onValueChange: (value: string) => void
@@ -203,7 +203,7 @@ function EditableCommentCell({
  * Columns are defined ONCE and read live state via table.options.meta.
  * This keeps the <Textarea> from being recreated on every keystroke.
  */
-const columns: ColumnDef<Comment>[] = [
+const columns: ColumnDef<TableComment>[] = [
   {
     accessorKey: "annotation_id",
     header: "ID",
