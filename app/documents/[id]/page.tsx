@@ -36,7 +36,7 @@ interface Comment {
   document_id: string
   document_name: string
   section_number: string | null
-  page_number: number
+  page_number: number | null
   paragraph_number: string | null
   comment: string
   comment_type: string

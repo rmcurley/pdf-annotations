@@ -71,7 +71,7 @@ interface Comment {
   document_id: string
   document_name: string
   section_number: string | null
-  page_number: number
+  page_number: number | null
   paragraph_number: string | null
   comment: string
   comment_type: string
@@ -138,7 +138,7 @@ function CommentCard({
   const [editedType, setEditedType] = useState(comment.comment_type)
   const [editedStatus, setEditedStatus] = useState(comment.comment_status)
   const [editedSection, setEditedSection] = useState(comment.section_number || '')
-  const [editedPage, setEditedPage] = useState(comment.page_number.toString())
+  const [editedPage, setEditedPage] = useState(comment.page_number?.toString() || '')
   const [showCopyButton, setShowCopyButton] = useState(false)
   const annotationId = formatAnnotationId(comment)
   const TypeIcon = getTypeIcon(isEditing ? editedType : comment.comment_type)
@@ -157,12 +157,14 @@ function CommentCard({
 
   const handleSaveEdit = async () => {
     if (onUpdateAnnotation && editedText.trim()) {
+      const pageNumber =
+        editedPage.trim() === '' ? null : parseInt(editedPage, 10)
       await onUpdateAnnotation(comment.id, {
         comment: editedText.trim(),
         comment_type: editedType,
         comment_status: editedStatus,
         section_number: editedSection || null,
-        page_number: parseInt(editedPage)
+        page_number: pageNumber ?? undefined,
       })
       setIsEditing(false)
     }
@@ -579,7 +581,7 @@ function CommentCard({
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 flex-shrink-0" />
-                  <span>Page {comment.page_number}</span>
+                  <span>Page {comment.page_number ?? 'N/A'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CalendarCheck className="w-4 h-4 flex-shrink-0" />
@@ -705,8 +707,10 @@ export function CommentsPanel({
     })
 
     return [...filtered].sort((a, b) => {
-      if (a.page_number !== b.page_number) {
-        return a.page_number - b.page_number
+      const aPage = a.page_number ?? Number.MAX_SAFE_INTEGER
+      const bPage = b.page_number ?? Number.MAX_SAFE_INTEGER
+      if (aPage !== bPage) {
+        return aPage - bPage
       }
       const aY = a.highlight_position?.boundingRect?.y1 || 0
       const bY = b.highlight_position?.boundingRect?.y1 || 0
