@@ -50,8 +50,6 @@ interface CommentSummary {
   created_at: string
 }
 
-type DetailedComment = TableComment
-
 export default function Page() {
   const params = useParams()
   const projectId = params.id as string
@@ -173,7 +171,26 @@ export default function Page() {
           // Fetch user data separately for each comment
           const commentsWithUsers = await Promise.all(
             (fullCommentsData || []).map(async (comment) => {
-              const baseComment: TableComment = {
+              let mappedUser: TableComment['users'] = undefined
+
+              if (comment.user_id) {
+                const { data: userData } = await supabase
+                  .from('users')
+                  .select('first_name, last_name, email, avatar_url')
+                  .eq('id', comment.user_id)
+                  .single()
+
+                if (userData) {
+                  mappedUser = {
+                    first_name: userData.first_name ?? null,
+                    last_name: userData.last_name ?? null,
+                    email: userData.email,
+                    avatar_url: userData.avatar_url ?? null,
+                  }
+                }
+              }
+
+              return {
                 id: comment.id,
                 annotation_id: comment.annotation_id ?? null,
                 comment_type: comment.comment_type ?? 'comment',
@@ -183,29 +200,8 @@ export default function Page() {
                 section_number: comment.section_number ?? null,
                 page_number: comment.page_number ?? null,
                 created_at: comment.created_at,
+                users: mappedUser,
               }
-
-              if (comment.user_id) {
-                const { data: userData } = await supabase
-                  .from('users')
-                  .select('first_name, last_name, email, avatar_url')
-                  .eq('id', comment.user_id)
-                  .single()
-
-                return {
-                  ...baseComment,
-                  users: userData
-                    ? {
-                        first_name: userData.first_name ?? null,
-                        last_name: userData.last_name ?? null,
-                        email: userData.email,
-                        avatar_url: userData.avatar_url ?? null,
-                      }
-                    : undefined,
-                }
-              }
-
-              return baseComment
             })
           )
           setAllCommentsForTable(commentsWithUsers)
@@ -324,7 +320,7 @@ export default function Page() {
     }
   }
 
-  const handleUpdateAnnotation = async (commentId: string, updates: Partial<Comment>) => {
+  const handleUpdateAnnotation = async (commentId: string, updates: Partial<TableComment>) => {
     try {
       const { error } = await supabase
         .from('comments')
