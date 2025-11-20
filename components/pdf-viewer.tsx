@@ -675,7 +675,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       return
     }
 
-    const withTimeout = async <T,>(promise: Promise<T>, ms = 12000) =>
+    const withTimeout = async <T,>(promise: Promise<T>, ms = 45000) =>
       Promise.race<T>([
         promise,
         new Promise((_, reject) =>

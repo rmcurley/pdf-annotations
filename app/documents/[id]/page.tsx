@@ -85,7 +85,7 @@ export default function DocumentPage() {
 
   const [tableViewOpen, setTableViewOpen] = useState(false)
 
-  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 12000): Promise<T> =>
+  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 45000): Promise<T> =>
     Promise.race([
       promise,
       new Promise<T>((_, reject) =>
