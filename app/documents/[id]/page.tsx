@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
@@ -66,7 +66,8 @@ export default function DocumentPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
-  const supabase = createClient()
+  // Memoize supabase client so effects don't re-run every render
+  const supabase = useMemo(() => createClient(), [])
   const documentId = params.id as string
 
   const [document, setDocument] = useState<Document | null>(null)
