@@ -213,147 +213,150 @@ export default function Page() {
     }
   }, [projectId])
 
-  const handleUploadComplete = () => {
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
-    // Transform documents to include annotation counts
-    const documentsWithAnnotations: DocumentRow[] = documents.map(doc => {
-      const docComments = comments.filter(c => c.document_id === doc.id)
-      const proposedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'proposed').length
-      const approvedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'accepted').length
-      const rejectedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'rejected').length
+  // Transform documents to include annotation counts
+  const documentsWithAnnotations: DocumentRow[] = documents.map(doc => {
+    const docComments = comments.filter(c => c.document_id === doc.id)
+    const proposedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'proposed').length
+    const approvedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'accepted').length
+    const rejectedCount = docComments.filter(c => c.comment_status?.toLowerCase() === 'rejected').length
 
-      return {
-        id: doc.id,
-        name: doc.name,
-        pdf_url: doc.pdf_url,
-        page_count: doc.page_count,
-        file_size: doc.file_size,
-        version: doc.version || 'Draft',
-        proposed_count: proposedCount,
-        approved_count: approvedCount,
-        rejected_count: rejectedCount,
-        reviewers: doc.reviewers || [],
+    return {
+      id: doc.id,
+      name: doc.name,
+      pdf_url: doc.pdf_url,
+      page_count: doc.page_count,
+      file_size: doc.file_size,
+      version: doc.version || 'Draft',
+      proposed_count: proposedCount,
+      approved_count: approvedCount,
+      rejected_count: rejectedCount,
+      reviewers: doc.reviewers || [],
+    }
+  })
+
+  // Aggregate comments by date for the chart
+  const chartData = (() => {
+    // Group comments by date
+    const dateMap = new Map<string, { total: number; approved: number }>()
+
+    comments.forEach(comment => {
+      const date = new Date(comment.created_at).toISOString().split('T')[0]
+      const current = dateMap.get(date) || { total: 0, approved: 0 }
+
+      current.total += 1
+      if (comment.comment_status?.toLowerCase() === 'accepted') {
+        current.approved += 1
       }
+
+      dateMap.set(date, current)
     })
 
-    // Aggregate comments by date for the chart
-    const chartData = (() => {
-      // Group comments by date
-      const dateMap = new Map<string, { total: number; approved: number }>()
+    // Convert to array and sort by date
+    const dataPoints = Array.from(dateMap.entries())
+      .map(([date, counts]) => ({
+        date,
+        total: counts.total,
+        approved: counts.approved,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
 
-      comments.forEach(comment => {
-        const date = new Date(comment.created_at).toISOString().split('T')[0]
-        const current = dateMap.get(date) || { total: 0, approved: 0 }
+    // Calculate cumulative totals
+    let cumulativeTotal = 0
+    let cumulativeApproved = 0
 
-        current.total += 1
-        if (comment.comment_status?.toLowerCase() === 'accepted') {
-          current.approved += 1
-        }
+    return dataPoints.map(point => {
+      cumulativeTotal += point.total
+      cumulativeApproved += point.approved
+      return {
+        date: point.date,
+        total: cumulativeTotal,
+        approved: cumulativeApproved,
+      }
+    })
+  })()
 
-        dateMap.set(date, current)
-      })
-
-      // Convert to array and sort by date
-      const dataPoints = Array.from(dateMap.entries())
-        .map(([date, counts]) => ({
-          date,
-          total: counts.total,
-          approved: counts.approved,
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date))
-
-      // Calculate cumulative totals
-      let cumulativeTotal = 0
-      let cumulativeApproved = 0
-
-      return dataPoints.map(point => {
-        cumulativeTotal += point.total
-        cumulativeApproved += point.approved
-        return {
-          date: point.date,
-          total: cumulativeTotal,
-          approved: cumulativeApproved,
-        }
-      })
-    })()
-
-    const handleUpdateDocument = (documentId: string, updates: { name?: string; page_count?: number | null }) => {
-      setDocuments((prev) =>
-        prev.map((doc) =>
-          doc.id === documentId ? { ...doc, ...updates } : doc
-        )
+  const handleUpdateDocument = (documentId: string, updates: { name?: string; page_count?: number | null }) => {
+    setDocuments((prev) =>
+      prev.map((doc) =>
+        doc.id === documentId ? { ...doc, ...updates } : doc
       )
-    }
+    )
+  }
 
-    const handleDeleteDocument = (documentId: string) => {
-      // Get annotation count for this document
-      const docComments = comments.filter(c => c.document_id === documentId)
-      const annotationCount = docComments.length
+  const handleDeleteDocument = (documentId: string) => {
+    // Get annotation count for this document
+    const docComments = comments.filter(c => c.document_id === documentId)
+    const annotationCount = docComments.length
 
-      setDeleteDocumentId(documentId)
-      setDeleteDocumentAnnotationCount(annotationCount)
-    }
+    setDeleteDocumentId(documentId)
+    setDeleteDocumentAnnotationCount(annotationCount)
+  }
 
-    const handleDeleteDocumentConfirm = async () => {
-      if (!deleteDocumentId) return
+  const handleDeleteDocumentConfirm = async () => {
+    if (!deleteDocumentId) return
 
-      try {
-        const { error } = await supabase
-          .from('documents')
-          .delete()
-          .eq('id', deleteDocumentId)
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', deleteDocumentId)
 
-        if (error) throw error
+      if (error) throw error
 
-        // Refresh data
-        fetchData()
-        setDeleteDocumentId(null)
-        setDeleteDocumentAnnotationCount(0)
-      } catch (error) {
-        console.error('Error deleting document:', error)
-        alert('Failed to delete document')
-      }
-    }
-
-    const handleUpdateAnnotation = useCallback(async (commentId: string, updates: Partial<TableComment>) => {
-      try {
-        const { error } = await supabase
-          .from('comments')
-          .update(updates)
-          .eq('id', commentId)
-
-        if (error) throw error
-
-        // Refresh data
-        fetchData()
-      } catch (error) {
-        console.error('Error updating annotation:', error)
-        alert('Failed to update annotation')
-      }
-    }, [fetchData])
-
-    useEffect(() => {
+      // Refresh data
       fetchData()
-    }, [fetchData])
-
-    const handleDeleteComment = async (commentId: string) => {
-      try {
-        const { error } = await supabase
-          .from('comments')
-          .delete()
-          .eq('id', commentId)
-
-        if (error) throw error
-
-        // Refresh data
-        fetchData()
-      } catch (error) {
-        console.error('Error deleting annotation:', error)
-        alert('Failed to delete annotation')
-      }
+      setDeleteDocumentId(null)
+      setDeleteDocumentAnnotationCount(0)
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert('Failed to delete document')
     }
+  }
 
-    return (
+  const handleUpdateAnnotation = useCallback(async (commentId: string, updates: Partial<TableComment>) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .update(updates)
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      // Refresh data
+      fetchData()
+    } catch (error) {
+      console.error('Error updating annotation:', error)
+      alert('Failed to update annotation')
+    }
+  }, [fetchData])
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+
+      if (error) throw error
+
+      // Refresh data
+      fetchData()
+    } catch (error) {
+      console.error('Error deleting annotation:', error)
+      alert('Failed to delete annotation')
+    }
+  }
+
+  const handleUploadComplete = () => {
+    fetchData()
+    setUploadModalOpen(false)
+  }
+
+  return (
       <SidebarProvider
         style={
           {
@@ -449,7 +452,5 @@ export default function Page() {
         </AlertDialog>
       </SidebarProvider>
     )
-  }
-
-
+}
 
