@@ -719,19 +719,25 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     const pdfPageNumber = highlight.position.pageNumber || 1
     setPageNumber(pdfPageNumber)
 
-    // Find nearest bookmark for this page
+    const selection = window.getSelection()
+    let selectionRect: DOMRect | null = null
+
+    // Find nearest bookmark for this page using selection Y position
     // Determine selection position as normalized Y within the page (top-origin)
     let selectionYNormalized: number | undefined = undefined
-    try {
-      const rangeRect = range.getBoundingClientRect()
-      const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
-      if (pageElement) {
-        const pageRect = pageElement.getBoundingClientRect()
-        const offsetY = rangeRect.top - pageRect.top
-        selectionYNormalized = Math.min(Math.max(offsetY / Math.max(pageRect.height, 1), 0), 1)
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      selectionRect = range.getBoundingClientRect()
+      try {
+        const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
+        if (pageElement) {
+          const pageRect = pageElement.getBoundingClientRect()
+          const offsetY = selectionRect.top - pageRect.top
+          selectionYNormalized = Math.min(Math.max(offsetY / Math.max(pageRect.height, 1), 0), 1)
+        }
+      } catch (e) {
+        console.warn('Could not compute selection Y position:', e)
       }
-    } catch (e) {
-      console.warn('Could not compute selection Y position:', e)
     }
 
     const nearestBookmark = findNearestBookmark(pdfPageNumber, selectionYNormalized)
@@ -739,10 +745,8 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark)
 
     // Calculate button position based on selection
-    const selection = window.getSelection()
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
+    if (selectionRect) {
+      const rect = selectionRect
       const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
       const containerRect = container?.getBoundingClientRect()
       const availableSpaceAbove = containerRect ? rect.top - containerRect.top : rect.top
