@@ -16,6 +16,7 @@ import type {
   ScaledPosition,
 } from 'react-pdf-highlighter'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -193,9 +194,25 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
           if (dest && dest[0]) {
             const pageRef = dest[0]
             const pageIndex = await pdfDoc.getPageIndex(pageRef)
+            let yNormalizedFromTop: number | null = null
+
+            // dest array format: [pageRef, 'XYZ', left, top, zoom]
+            if (Array.isArray(dest) && typeof dest[3] === 'number') {
+              try {
+                const page = await pdfDoc.getPage(pageIndex + 1)
+                const viewport = page.getViewport({ scale: 1 })
+                const topFromBottom = dest[3]
+                // PDF coords origin is bottom-left; convert to top-origin normalized 0-1
+                yNormalizedFromTop = 1 - Math.min(Math.max(topFromBottom / Math.max(viewport.height, 1), 0), 1)
+              } catch (e) {
+                console.warn('Error normalizing bookmark position:', e)
+              }
+            }
+
             result.push({
               title: bookmark.title,
-              pageNumber: pageIndex + 1 // Convert 0-indexed to 1-indexed
+              pageNumber: pageIndex + 1, // Convert 0-indexed to 1-indexed
+              yNormalizedFromTop,
             })
           }
         } catch (e) {
@@ -211,20 +228,34 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   }
 
   // Helper function to find nearest bookmark for a given page
-  const findNearestBookmark = (pageNum: number): string => {
+  const findNearestBookmark = (pageNum: number, selectionYNormalized?: number): string => {
     if (pdfBookmarksRef.current.length === 0) return ''
 
-    // Find the last bookmark that is <= the current page
-    let nearestBookmark = pdfBookmarksRef.current[0]
-    for (const bookmark of pdfBookmarksRef.current) {
-      if (bookmark.pageNumber <= pageNum) {
-        nearestBookmark = bookmark
-      } else {
-        break // Bookmarks are sorted, so we can stop here
+    // Sort by page, then Y (top to bottom)
+    const bookmarks = [...pdfBookmarksRef.current].sort((a, b) => {
+      if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
+      const ay = typeof a.yNormalizedFromTop === 'number' ? a.yNormalizedFromTop : 0
+      const by = typeof b.yNormalizedFromTop === 'number' ? b.yNormalizedFromTop : 0
+      return ay - by
+    })
+
+    // Filter to bookmarks strictly above the selection (or any on prior pages)
+    const candidates = bookmarks.filter((bm) => {
+      if (bm.pageNumber < pageNum) return true
+      if (bm.pageNumber > pageNum) return false
+      if (typeof bm.yNormalizedFromTop !== 'number' || typeof selectionYNormalized !== 'number') {
+        // No Y info—fallback to allowing same-page match
+        return true
       }
+      return bm.yNormalizedFromTop <= selectionYNormalized
+    })
+
+    if (candidates.length === 0) {
+      return ''
     }
 
-    return nearestBookmark.title || ''
+    // Pick the last candidate (closest from above)
+    return candidates[candidates.length - 1]?.title || ''
   }
 
 
@@ -689,7 +720,21 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     setPageNumber(pdfPageNumber)
 
     // Find nearest bookmark for this page
-    const nearestBookmark = findNearestBookmark(pdfPageNumber)
+    // Determine selection position as normalized Y within the page (top-origin)
+    let selectionYNormalized: number | undefined = undefined
+    try {
+      const rangeRect = range.getBoundingClientRect()
+      const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
+      if (pageElement) {
+        const pageRect = pageElement.getBoundingClientRect()
+        const offsetY = rangeRect.top - pageRect.top
+        selectionYNormalized = Math.min(Math.max(offsetY / Math.max(pageRect.height, 1), 0), 1)
+      }
+    } catch (e) {
+      console.warn('Could not compute selection Y position:', e)
+    }
+
+    const nearestBookmark = findNearestBookmark(pdfPageNumber, selectionYNormalized)
     setSectionNumber(nearestBookmark)
     console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark)
 
@@ -1053,22 +1098,25 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   : 'translate(-50%, 8px)', // Position below when near the top to avoid clipping
             }}
           >
-            <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[320px]">
+            <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[368px]">
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full">
                   <Badge variant="outline" className="text-xs">
                     Page {documentPageNumber || pageNumber}
                   </Badge>
                   {sectionNumber && (
-                    <Badge variant="secondary" className="text-xs max-w-[170px] truncate">
+                    <Badge
+                      variant="secondary"
+                      className="text-xs flex-1 max-w-full truncate text-left justify-start"
+                    >
                       {sectionNumber}
                     </Badge>
                   )}
                 </div>
               </div>
 
-              {/* Type Selection Icons */}
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              {/* Type Selection */}
+              <ButtonGroup className="w-full mb-2">
                 <Button
                   size="sm"
                   variant={inlineAnnotationType === 'comment' ? 'default' : 'outline'}
@@ -1096,7 +1144,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   <UsersRound className="w-3 h-3 mr-1" />
                   Discussion
                 </Button>
-              </div>
+              </ButtonGroup>
 
               {/* Quick Annotation Textarea */}
               <Textarea
