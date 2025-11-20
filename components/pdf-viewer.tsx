@@ -79,6 +79,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [showInlineDetails, setShowInlineDetails] = useState(false)
   const [inlineAnnotationText, setInlineAnnotationText] = useState('')
   const [inlineSaving, setInlineSaving] = useState(false)
+  const [inlinePlacement, setInlinePlacement] = useState<'above' | 'below'>('above')
   const [scale, setScale] = useState(100) // Zoom percentage (50% to 200%)
   const [scaleMode, setScaleMode] = useState<'custom' | 'page-fit' | 'page-width'>('custom')
   const [currentPage, setCurrentPage] = useState(1)
@@ -665,6 +666,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       setButtonPosition(null)
       setSectionNumber('')
       setDocumentPageNumber('')
+      setInlinePlacement('above')
     } catch (error) {
       console.error('Error saving inline annotation:', error)
     } finally {
@@ -696,11 +698,19 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0)
       const rect = range.getBoundingClientRect()
+      const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+      const containerRect = container?.getBoundingClientRect()
+      const availableSpaceAbove = containerRect ? rect.top - containerRect.top : rect.top
+      const estimatedPopoverHeight = 180 // rough height of the inline toolbar
+      const placement: 'above' | 'below' =
+        availableSpaceAbove >= estimatedPopoverHeight ? 'above' : 'below'
+
+      setInlinePlacement(placement)
 
       // Position button above the selection, centered
       setButtonPosition({
         x: rect.left + rect.width / 2,
-        y: rect.top - 8
+        y: placement === 'above' ? rect.top - 8 : rect.bottom + 8
       })
     } else {
       setButtonPosition(null)
@@ -1037,7 +1047,10 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             style={{
               left: `${buttonPosition.x}px`,
               top: `${buttonPosition.y}px`,
-              transform: 'translate(-50%, calc(-100% - 8px))' // Center horizontally and position above
+              transform:
+                inlinePlacement === 'above'
+                  ? 'translate(-50%, calc(-100% - 8px))' // Center horizontally and position above
+                  : 'translate(-50%, 8px)', // Position below when near the top to avoid clipping
             }}
           >
             <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[320px]">
@@ -1106,6 +1119,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     setButtonPosition(null)
                     setSectionNumber('')
                     setDocumentPageNumber('')
+                    setInlinePlacement('above')
                   } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                     // Quick save directly
                     e.preventDefault()
@@ -1155,6 +1169,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     setButtonPosition(null)
                     setSectionNumber('')
                     setDocumentPageNumber('')
+                    setInlinePlacement('above')
                   }}
                   disabled={inlineSaving}
                 >

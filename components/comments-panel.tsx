@@ -37,6 +37,7 @@ import {
   UsersRound,
   Ban,
   Save,
+  Loader2,
 } from 'lucide-react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
@@ -160,6 +161,7 @@ function CommentCard({
   const [editedSection, setEditedSection] = useState(comment.section_number || '')
   const [editedPage, setEditedPage] = useState(comment.page_number?.toString() || '')
   const [showCopyButton, setShowCopyButton] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const annotationId = formatAnnotationId(comment)
   const TypeIconComponent = getTypeIcon(isEditing ? editedType : comment.comment_type)
   const shortId = annotationId
@@ -176,7 +178,10 @@ function CommentCard({
   }, [scrollToCommentId, comment.id])
 
   const handleSaveEdit = async () => {
-    if (onUpdateAnnotation && editedText.trim()) {
+    if (!onUpdateAnnotation || !editedText.trim()) return
+
+    setIsSaving(true)
+    try {
       const pageNumber =
         editedPage.trim() === '' ? null : parseInt(editedPage, 10)
       await onUpdateAnnotation(comment.id, {
@@ -187,6 +192,8 @@ function CommentCard({
         page_number: pageNumber ?? undefined,
       })
       setIsEditing(false)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -585,11 +592,20 @@ function CommentCard({
                 </Button>
                 <Button
                   onClick={handleSaveEdit}
-                  disabled={!editedText.trim()}
+                  disabled={!editedText.trim() || isSaving}
                   className="flex-1 flex items-center justify-center"
                 >
-                  <Save className="w-4 h-4 mr-2" />
-                  Save
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

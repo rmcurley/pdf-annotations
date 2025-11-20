@@ -76,6 +76,10 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+
     // Send invitation email
     // This sends an invitation email. The user will only be created after they accept
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest) {
         invited_by: user.id,
         invited_at: new Date().toISOString(),
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`
+      redirectTo: `${appUrl}/auth/callback`
     })
 
     if (error) {
