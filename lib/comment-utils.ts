@@ -40,3 +40,11 @@ export function getCommentUserInitials<T extends HasCommentUser>(comment: T) {
 
   return "?"
 }
+
+export function formatAnnotationId(comment: { annotation_id?: string | null; id: string }) {
+  if (comment.annotation_id) {
+    return comment.annotation_id
+  }
+
+  return comment.id.slice(0, 4).toUpperCase()
+}

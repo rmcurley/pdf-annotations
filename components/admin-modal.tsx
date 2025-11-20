@@ -212,8 +212,11 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const [selectedUser, setSelectedUser] = React.useState<UserRow | null>(null)
 
   // Load users and projects when modal opens
-  const loadData = React.useCallback(async () => {
-    setLoading(true)
+  const loadData = React.useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? true
+    if (showLoading) {
+      setLoading(true)
+    }
     try {
       // Fetch all users from users table
       const { data: usersData, error: usersError } = await supabase
@@ -250,7 +253,9 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
       console.error('Error loading admin data:', error)
       toast.error('Failed to load users and projects')
     } finally {
-      setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+      }
     }
   }, [supabase])
 
@@ -282,8 +287,8 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
       toast.success(`Invitation sent to ${inviteEmail}`)
       setInviteEmail("")
 
-      // Refresh the user list to show the new invited user
-      loadData()
+      // Refresh the user list to show the new invited user without locking the table UI
+      await loadData({ showLoading: false })
     } catch (error) {
       console.error('Error inviting user:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to send invitation')

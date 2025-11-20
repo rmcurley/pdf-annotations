@@ -35,6 +35,8 @@ import {
   Circle,
   ChevronDown,
   UsersRound,
+  Ban,
+  Save,
 } from 'lucide-react'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import {
@@ -449,9 +451,6 @@ function CommentCard({
           /* Edit Mode - Inline Form */
           <TooltipProvider>
             <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between text-sm font-semibold text-foreground">
-                <span>{annotationId}</span>
-              </div>
               {/* Row 1: Type Toggle and Section/Page */}
               <div className="flex gap-2">
                 {/* Type Selection Button Group - Icons Only */}
@@ -581,13 +580,15 @@ function CommentCard({
                   onClick={handleCancelEdit}
                   className="flex-1"
                 >
+                  <Ban className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
                 <Button
                   onClick={handleSaveEdit}
                   disabled={!editedText.trim()}
-                  className="flex-1"
+                  className="flex-1 flex items-center justify-center"
                 >
+                  <Save className="w-4 h-4 mr-2" />
                   Save
                 </Button>
               </div>
