@@ -675,15 +675,25 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       return
     }
 
+    const withTimeout = async <T,>(promise: Promise<T>, ms = 12000) =>
+      Promise.race<T>([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Save request timed out')), ms)
+        ) as Promise<T>,
+      ])
+
     try {
       setInlineSaving(true)
-      await Promise.resolve(
-        onAddHighlight(
-          selectedHighlight,
-          inlineAnnotationText.trim(),
-          inlineAnnotationType,
-          'proposed', // Default status
-          sectionNumber,
+      await withTimeout(
+        Promise.resolve(
+          onAddHighlight(
+            selectedHighlight,
+            inlineAnnotationText.trim(),
+            inlineAnnotationType,
+            'proposed', // Default status
+            sectionNumber,
+          )
         )
       )
 
@@ -700,6 +710,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       setInlinePlacement('above')
     } catch (error) {
       console.error('Error saving inline annotation:', error)
+      alert('Saving the annotation took too long. Please try again.')
     } finally {
       setInlineSaving(false)
     }

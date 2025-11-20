@@ -85,6 +85,15 @@ export default function DocumentPage() {
 
   const [tableViewOpen, setTableViewOpen] = useState(false)
 
+  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 12000): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), ms)
+      ),
+    ])
+  , [])
+
   // Separate effect for body overflow to ensure DOM is ready
   useEffect(() => {
     // Wait for next tick to ensure body is available
@@ -135,11 +144,13 @@ export default function DocumentPage() {
 
   const fetchDocument = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('id', documentId)
-        .single()
+      const { data, error } = await withTimeout<any>(
+        supabase
+          .from('documents')
+          .select('*')
+          .eq('id', documentId)
+          .single() as unknown as Promise<any>
+      )
 
       if (error) throw error
       setDocument(data)
@@ -158,20 +169,24 @@ export default function DocumentPage() {
       }
 
       // Fetch all projects for sidebar
-      const { data: allProjectsData, error: allProjectsError } = await supabase
-        .from('projects')
-        .select('id, name')
-        .order('name')
+      const { data: allProjectsData, error: allProjectsError } = await withTimeout<any>(
+        supabase
+          .from('projects')
+          .select('id, name')
+          .order('name') as unknown as Promise<any>
+      )
 
       if (!allProjectsError && allProjectsData) {
         setAllProjects(allProjectsData)
       }
 
       // Fetch all documents for sidebar
-      const { data: allDocsData, error: allDocsError } = await supabase
-        .from('documents')
-        .select('id, name, project_id')
-        .order('name')
+      const { data: allDocsData, error: allDocsError } = await withTimeout<any>(
+        supabase
+          .from('documents')
+          .select('id, name, project_id')
+          .order('name') as unknown as Promise<any>
+      )
 
       if (!allDocsError && allDocsData) {
         setAllDocuments(allDocsData)
@@ -185,11 +200,13 @@ export default function DocumentPage() {
 
   const fetchComments = useCallback(async () => {
     try {
-      const { data: commentsData, error } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('document_id', documentId)
-        .order('created_at', { ascending: false })
+      const { data: commentsData, error } = await withTimeout<any>(
+        supabase
+          .from('comments')
+          .select('*')
+          .eq('document_id', documentId)
+          .order('created_at', { ascending: false }) as unknown as Promise<any>
+      )
 
       if (error) {
         console.error('Supabase error fetching comments:', {
@@ -202,7 +219,7 @@ export default function DocumentPage() {
       }
 
       // Fetch user data for comments that have a user_id
-      const userIds = [...new Set(commentsData?.map(c => c.user_id).filter(Boolean) || [])]
+      const userIds = [...new Set((commentsData as any[] | undefined)?.map((c: any) => c.user_id).filter(Boolean) || [])]
       const usersMap = new Map<string, {
         first_name: string | null
         last_name: string | null
@@ -211,20 +228,22 @@ export default function DocumentPage() {
       }>()
 
       if (userIds.length > 0) {
-        const { data: usersData, error: usersError } = await supabase
-          .from('users')
-          .select('id, first_name, last_name, email, avatar_url')
-          .in('id', userIds)
+        const { data: usersData, error: usersError } = await withTimeout<any>(
+          supabase
+            .from('users')
+            .select('id, first_name, last_name, email, avatar_url')
+            .in('id', userIds) as unknown as Promise<any>
+        )
 
         if (!usersError && usersData) {
-          usersData.forEach(user => {
+          (usersData as any[]).forEach((user: any) => {
             usersMap.set(user.id, user)
           })
         }
       }
 
       // Join user data with comments
-      const commentsWithUsers = commentsData?.map(comment => ({
+      const commentsWithUsers = (commentsData as any[] | undefined)?.map((comment: any) => ({
         ...comment,
         users: comment.user_id ? usersMap.get(comment.user_id) : undefined
       })) || []
