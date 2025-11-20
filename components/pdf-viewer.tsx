@@ -243,9 +243,9 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     const candidates = bookmarks.filter((bm) => {
       if (bm.pageNumber < pageNum) return true
       if (bm.pageNumber > pageNum) return false
+      // If we lack Y info for either the bookmark or the selection, avoid guessing on the same page.
       if (typeof bm.yNormalizedFromTop !== 'number' || typeof selectionYNormalized !== 'number') {
-        // No Y info—fallback to allowing same-page match
-        return true
+        return false
       }
       return bm.yNormalizedFromTop <= selectionYNormalized
     })
