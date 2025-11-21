@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hasNavigated, setHasNavigated] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -31,8 +32,11 @@ export default function LoginPage() {
         toast.error(error.message)
       } else {
         toast.success('Logged in successfully!')
-        router.push('/projects')
-        router.refresh()
+        // Prevent double navigation if the submit handler fires twice
+        if (!hasNavigated) {
+          setHasNavigated(true)
+          router.push('/projects')
+        }
       }
     } catch (error) {
       console.error('Login failed:', error)

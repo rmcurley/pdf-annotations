@@ -23,6 +23,14 @@ type ExtendedHighlightComment = IHighlight['comment'] & {
   annotation_id?: string | null
 }
 
+type UserProfile = {
+  id: string
+  first_name: string | null
+  last_name: string | null
+  email: string
+  avatar_url: string | null
+}
+
 interface Document {
   id: string
   project_id: string
@@ -144,12 +152,12 @@ export default function DocumentPage() {
 
   const fetchDocument = useCallback(async () => {
     try {
-      const { data, error } = await withTimeout<any>(
+      const { data, error } = await withTimeout(
         supabase
-          .from('documents')
+          .from<Document>('documents')
           .select('*')
           .eq('id', documentId)
-          .single() as unknown as Promise<any>
+          .single()
       )
 
       if (error) throw error
@@ -169,11 +177,11 @@ export default function DocumentPage() {
       }
 
       // Fetch all projects for sidebar
-      const { data: allProjectsData, error: allProjectsError } = await withTimeout<any>(
+      const { data: allProjectsData, error: allProjectsError } = await withTimeout(
         supabase
-          .from('projects')
+          .from<Project>('projects')
           .select('id, name')
-          .order('name') as unknown as Promise<any>
+          .order('name')
       )
 
       if (!allProjectsError && allProjectsData) {
@@ -181,11 +189,11 @@ export default function DocumentPage() {
       }
 
       // Fetch all documents for sidebar
-      const { data: allDocsData, error: allDocsError } = await withTimeout<any>(
+      const { data: allDocsData, error: allDocsError } = await withTimeout(
         supabase
-          .from('documents')
+          .from<{ id: string; name: string; project_id: string }>('documents')
           .select('id, name, project_id')
-          .order('name') as unknown as Promise<any>
+          .order('name')
       )
 
       if (!allDocsError && allDocsData) {
@@ -196,16 +204,16 @@ export default function DocumentPage() {
     } finally {
       setLoading(false)
     }
-  }, [documentId, supabase])
+  }, [documentId, supabase, withTimeout])
 
   const fetchComments = useCallback(async () => {
     try {
-      const { data: commentsData, error } = await withTimeout<any>(
+      const { data: commentsData, error } = await withTimeout(
         supabase
-          .from('comments')
+          .from<Comment>('comments')
           .select('*')
           .eq('document_id', documentId)
-          .order('created_at', { ascending: false }) as unknown as Promise<any>
+          .order('created_at', { ascending: false })
       )
 
       if (error) {
@@ -219,31 +227,26 @@ export default function DocumentPage() {
       }
 
       // Fetch user data for comments that have a user_id
-      const userIds = [...new Set((commentsData as any[] | undefined)?.map((c: any) => c.user_id).filter(Boolean) || [])]
-      const usersMap = new Map<string, {
-        first_name: string | null
-        last_name: string | null
-        email: string
-        avatar_url?: string | null
-      }>()
+      const userIds = [...new Set((commentsData || []).map((c) => c.user_id).filter(Boolean) as string[])]
+      const usersMap = new Map<string, UserProfile>()
 
       if (userIds.length > 0) {
-        const { data: usersData, error: usersError } = await withTimeout<any>(
+        const { data: usersData, error: usersError } = await withTimeout(
           supabase
-            .from('users')
+            .from<UserProfile>('users')
             .select('id, first_name, last_name, email, avatar_url')
-            .in('id', userIds) as unknown as Promise<any>
+            .in('id', userIds)
         )
 
         if (!usersError && usersData) {
-          (usersData as any[]).forEach((user: any) => {
-            usersMap.set(user.id, user)
+          usersData.forEach((profile) => {
+            usersMap.set(profile.id, profile)
           })
         }
       }
 
       // Join user data with comments
-      const commentsWithUsers = (commentsData as any[] | undefined)?.map((comment: any) => ({
+      const commentsWithUsers = (commentsData || []).map((comment) => ({
         ...comment,
         users: comment.user_id ? usersMap.get(comment.user_id) : undefined
       })) || []
@@ -254,7 +257,7 @@ export default function DocumentPage() {
       // Set empty comments array to prevent UI issues
       setComments([])
     }
-  }, [documentId, supabase])
+  }, [documentId, supabase, withTimeout])
 
   useEffect(() => {
     fetchDocument()

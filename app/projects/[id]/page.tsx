@@ -50,6 +50,14 @@ interface CommentSummary {
   created_at: string
 }
 
+type UserProfile = {
+  id: string
+  first_name: string | null
+  last_name: string | null
+  email: string
+  avatar_url: string | null
+}
+
 export default function Page() {
   const params = useParams()
   const projectId = params.id as string
@@ -152,10 +160,10 @@ export default function Page() {
           const userIds = Array.from(new Set(fullCommentsData.map(c => c.user_id).filter(Boolean))) as string[]
 
           // Batch fetch users
-          let userMap: Record<string, any> = {}
+          let userMap: Record<string, UserProfile> = {}
           if (userIds.length > 0) {
             const { data: usersData, error: usersError } = await supabase
-              .from('users')
+              .from<UserProfile>('users')
               .select('id, first_name, last_name, email, avatar_url')
               .in('id', userIds)
 
@@ -165,7 +173,7 @@ export default function Page() {
               userMap = (usersData || []).reduce((acc, user) => {
                 acc[user.id] = user
                 return acc
-              }, {} as Record<string, any>)
+              }, {} as Record<string, UserProfile>)
             }
           }
 
