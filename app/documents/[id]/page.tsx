@@ -34,16 +34,22 @@ type UserProfile = {
 
 const fetchWithAbort = async <T,>(
   label: string,
-  fn: (signal: AbortSignal) => Promise<T>,
+  fn: () => Promise<T>,
   ms = 30000
 ): Promise<T> => {
-  const controller = new AbortController()
   const startedAt = Date.now()
-  const timer = setTimeout(() => controller.abort('timeout'), ms)
+  const timer = setTimeout(() => {
+    console.error(`[documents] ${label}:timeout`, { ms })
+  }, ms)
 
   try {
     console.log(`[documents] ${label}:start`, { ms })
-    const result = await fn(controller.signal)
+    const result = await Promise.race([
+      fn(),
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out')), ms)
+      ),
+    ])
     console.log(`[documents] ${label}:success`, { ms: Date.now() - startedAt })
     return result
   } catch (error) {
@@ -180,7 +186,7 @@ export default function DocumentPage() {
     try {
       const { data, error } = await fetchWithAbort<PostgrestSingleResponse<Document>>(
         'fetchDocument',
-        (signal) =>
+        () =>
           supabase
             .from('documents')
             .select('*')
@@ -207,7 +213,7 @@ export default function DocumentPage() {
       // Fetch all projects for sidebar
       const { data: allProjectsData, error: allProjectsError } = await fetchWithAbort<PostgrestResponse<Project>>(
         'fetchAllProjects',
-        (signal) =>
+        () =>
           supabase
             .from('projects')
             .select('id, name')
@@ -221,7 +227,7 @@ export default function DocumentPage() {
       // Fetch all documents for sidebar
       const { data: allDocsData, error: allDocsError } = await fetchWithAbort<PostgrestResponse<{ id: string; name: string; project_id: string }>>(
         'fetchAllDocuments',
-        (signal) =>
+        () =>
           supabase
             .from('documents')
             .select('id, name, project_id')
@@ -242,7 +248,7 @@ export default function DocumentPage() {
     try {
       const { data: commentsData, error } = await fetchWithAbort<PostgrestResponse<Comment>>(
         'fetchComments',
-        (signal) =>
+        () =>
           supabase
             .from('comments')
             .select('*')
@@ -267,13 +273,13 @@ export default function DocumentPage() {
 
       if (userIds.length > 0) {
         const { data: usersData, error: usersError } = await fetchWithAbort<PostgrestResponse<UserProfile>>(
-        'fetchCommentUsers',
-        (signal) =>
-          supabase
-            .from('users')
-            .select('id, first_name, last_name, email, avatar_url')
-            .in('id', userIds)
-      )
+          'fetchCommentUsers',
+          () =>
+            supabase
+              .from('users')
+              .select('id, first_name, last_name, email, avatar_url')
+              .in('id', userIds)
+        )
 
         if (!usersError && usersData) {
           usersData.forEach((profile) => {
