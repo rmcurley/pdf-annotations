@@ -28,7 +28,7 @@ function AvatarImage({
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
-      className={cn("size-full object-cover", className)}
+      className={cn("size-full object-cover grayscale", className)}
       {...props}
     />
   )

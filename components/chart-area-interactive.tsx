@@ -152,7 +152,7 @@ const chartConfig = {
 
 export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
   const isMobile = useIsMobile()
-  const [timeRange, setTimeRange] = React.useState("90d")
+  const [timeRange, setTimeRange] = React.useState("7d")
   const chartData = data || defaultChartData
 
   React.useEffect(() => {
@@ -161,19 +161,55 @@ export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
     }
   }, [isMobile])
 
-  const filteredData = chartData.filter((item) => {
-    const date = new Date(item.date)
-    const referenceDate = new Date("2024-06-30")
-    let daysToSubtract = 90
-    if (timeRange === "30d") {
-      daysToSubtract = 30
-    } else if (timeRange === "7d") {
-      daysToSubtract = 7
+  const daysToSubtract = React.useMemo(() => {
+    if (timeRange === "30d") return 30
+    if (timeRange === "7d") return 7
+    return 90
+  }, [timeRange])
+
+  const referenceDate = React.useMemo(() => {
+    if (!chartData.length) return new Date()
+    const validDates = chartData
+      .map((point) => new Date(point.date))
+      .filter((d) => !Number.isNaN(d.getTime()))
+    if (!validDates.length) return new Date()
+    return validDates.reduce((latest, current) =>
+      current > latest ? current : latest
+    )
+  }, [chartData])
+
+  const startDate = React.useMemo(() => {
+    const start = new Date(referenceDate)
+    start.setDate(start.getDate() - daysToSubtract)
+    return start
+  }, [referenceDate, daysToSubtract])
+
+  const filteredData = React.useMemo(() => {
+    return chartData.filter((item) => {
+      const date = new Date(item.date)
+      if (Number.isNaN(date.getTime())) return false
+      return date >= startDate && date <= referenceDate
+    })
+  }, [chartData, referenceDate, startDate])
+
+  const normalizedData = React.useMemo(() => {
+    const dateMap = new Map(filteredData.map((d) => [d.date, d]))
+    const result: ChartDataPoint[] = []
+    const cursor = new Date(startDate)
+    while (cursor <= referenceDate) {
+      const key = cursor.toISOString().split("T")[0]
+      const existing = dateMap.get(key)
+      result.push(
+        existing ?? {
+          date: key,
+          total: 0,
+          approved: 0,
+        }
+      )
+      cursor.setDate(cursor.getDate() + 1)
     }
-    const startDate = new Date(referenceDate)
-    startDate.setDate(startDate.getDate() - daysToSubtract)
-    return date >= startDate
-  })
+    return result
+  }, [filteredData, referenceDate, startDate])
 
   return (
     <Card className="@container/card">
@@ -181,9 +217,11 @@ export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
         <CardTitle>Total Annotations</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Total for the last 3 months
+            Total for the {timeRange === "90d" ? "last 3 months" : timeRange === "30d" ? "last 30 days" : "last 7 days"}
           </span>
-          <span className="@[540px]/card:hidden">Last 3 months</span>
+          <span className="@[540px]/card:hidden">
+            {timeRange === "90d" ? "Last 3 months" : timeRange === "30d" ? "Last 30 days" : "Last 7 days"}
+          </span>
         </CardDescription>
         <CardAction>
           <ToggleGroup
@@ -224,7 +262,7 @@ export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
           config={chartConfig}
           className="aspect-auto h-[250px] w-full"
         >
-          <AreaChart data={filteredData}>
+          <AreaChart data={normalizedData}>
             <defs>
               <linearGradient id="fillApproved" x1="0" y1="0" x2="0" y2="1">
                 <stop
