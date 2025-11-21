@@ -94,8 +94,8 @@ export interface TableComment {
   comment: string
   section_number?: string | null
   page_number?: number | null
-   document_name?: string | null
-   highlight_position?: any
+  document_name?: string
+  highlight_position?: any
   created_at?: string
   users?: {
     first_name: string | null
