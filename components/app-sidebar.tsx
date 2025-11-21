@@ -155,7 +155,7 @@ export function AppSidebar({ projects, documents, currentProjectId, ...props }: 
           <SidebarMenuItem>
             <div className="flex items-center gap-2 px-2 py-1.5">
               <IconInnerShadowTop className="size-5" />
-              <span className="text-base font-semibold">Acme Inc.</span>
+              <span className="text-base font-semibold">Annotate</span>
             </div>
           </SidebarMenuItem>
         </SidebarMenu>

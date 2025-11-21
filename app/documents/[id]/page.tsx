@@ -127,6 +127,15 @@ export default function DocumentPage() {
       ? comments.filter(c => filteredCommentIds.includes(c.id))
       : comments
 
+    const normalizeHighlightPosition = (position: HighlightPosition | null): HighlightPosition => {
+      if (!position) return {} as HighlightPosition
+      const normalizedPageNumber = Number((position as any).pageNumber)
+      return {
+        ...position,
+        pageNumber: Number.isFinite(normalizedPageNumber) ? normalizedPageNumber : 1,
+      }
+    }
+
     const newHighlights: IHighlight[] = commentsToShow.map((comment) => {
       const commentMeta: ExtendedHighlightComment = {
         text: comment.comment,
@@ -144,7 +153,7 @@ export default function DocumentPage() {
         content: {
           text: comment.highlighted_text || '',
         },
-        position: comment.highlight_position ?? ({} as HighlightPosition),
+        position: normalizeHighlightPosition(comment.highlight_position),
         comment: commentMeta,
       }
     })
@@ -153,6 +162,8 @@ export default function DocumentPage() {
 
   const fetchDocument = useCallback(async () => {
     try {
+      const startedAt = Date.now()
+      console.log('[documents] fetchDocument:start', { documentId })
       const { data, error } = await withTimeout<PostgrestSingleResponse<Document>>(
         supabase
           .from('documents')
@@ -162,6 +173,7 @@ export default function DocumentPage() {
       )
 
       if (error) throw error
+      console.log('[documents] fetchDocument:success', { documentId, ms: Date.now() - startedAt })
       setDocument(data)
 
       // Fetch the project for this document
@@ -209,6 +221,8 @@ export default function DocumentPage() {
 
   const fetchComments = useCallback(async () => {
     try {
+      const startedAt = Date.now()
+      console.log('[documents] fetchComments:start', { documentId })
       const { data: commentsData, error } = await withTimeout<PostgrestResponse<Comment>>(
         supabase
           .from('comments')
@@ -226,6 +240,7 @@ export default function DocumentPage() {
         })
         throw error
       }
+      console.log('[documents] fetchComments:success', { documentId, count: (commentsData || []).length, ms: Date.now() - startedAt })
 
       // Fetch user data for comments that have a user_id
       const userIds = [...new Set((commentsData || []).map((c) => c.user_id).filter(Boolean) as string[])]

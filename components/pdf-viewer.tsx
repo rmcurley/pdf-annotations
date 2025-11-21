@@ -258,6 +258,42 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     return candidates[candidates.length - 1]?.title || ''
   }
 
+  // Fallback: use nearest bold text on the page when no bookmark is available
+  const findNearestBoldHeading = (pageNum: number, selectionYNormalized?: number): string => {
+    const pageElement = document.querySelector(`[data-page-number="${pageNum}"]`) as HTMLElement | null
+    if (!pageElement) return ''
+
+    const textLayer = pageElement.querySelector('.textLayer') as HTMLElement | null
+    if (!textLayer) return ''
+
+    const pageRect = pageElement.getBoundingClientRect()
+    const targetY = typeof selectionYNormalized === 'number'
+      ? selectionYNormalized * Math.max(pageRect.height, 1)
+      : Number.POSITIVE_INFINITY
+
+    let fallback = ''
+    let fallbackY = -Infinity
+
+    Array.from(textLayer.querySelectorAll('span')).forEach((span) => {
+      const style = window.getComputedStyle(span)
+      const weight = parseInt(style.fontWeight, 10)
+      const isBold = style.fontWeight === 'bold' || (Number.isFinite(weight) && weight >= 600)
+      if (!isBold) return
+
+      const text = span.textContent?.trim() || ''
+      if (!text) return
+
+      const rect = span.getBoundingClientRect()
+      const spanY = rect.top - pageRect.top
+      if (spanY <= targetY && spanY > fallbackY) {
+        fallback = text
+        fallbackY = spanY
+      }
+    })
+
+    return fallback
+  }
+
 
   const resetHash = () => {
     // Don't reset hash anymore - we want highlights to persist
@@ -752,8 +788,9 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
 
     const nearestBookmark = findNearestBookmark(pdfPageNumber, selectionYNormalized)
-    setSectionNumber(nearestBookmark)
-    console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark)
+    const nearestHeading = nearestBookmark || findNearestBoldHeading(pdfPageNumber, selectionYNormalized)
+    setSectionNumber(nearestHeading)
+    console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark, 'Fallback heading:', nearestHeading)
 
     // Calculate button position based on selection
     if (selectionRect) {
