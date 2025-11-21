@@ -35,7 +35,7 @@ type UserProfile = {
 const fetchWithAbort = async <T,>(
   label: string,
   fn: () => PromiseLike<T>,
-  ms = 30000
+  ms = 120000
 ): Promise<T> => {
   const startedAt = Date.now()
   const timer = setTimeout(() => {

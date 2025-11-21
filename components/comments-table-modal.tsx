@@ -94,6 +94,8 @@ export interface TableComment {
   comment: string
   section_number?: string | null
   page_number?: number | null
+   document_name?: string | null
+   highlight_position?: any
   created_at?: string
   users?: {
     first_name: string | null
@@ -528,6 +530,32 @@ export function CommentsTableModal({
     [activeFilters, searchFilteredComments],
   )
 
+  const sortedComments = React.useMemo(() => {
+    return [...filteredByFilters].sort((a, b) => {
+      const docA = (a.document_name || "").toLowerCase()
+      const docB = (b.document_name || "").toLowerCase()
+      if (docA !== docB) return docA < docB ? -1 : 1
+
+      const pageA = Number.isFinite(a.page_number) ? (a.page_number as number) : Number.POSITIVE_INFINITY
+      const pageB = Number.isFinite(b.page_number) ? (b.page_number as number) : Number.POSITIVE_INFINITY
+      if (pageA !== pageB) return pageA - pageB
+
+      const getLeft = (comment: TableComment) => {
+        const pos = comment.highlight_position as any
+        if (pos?.boundingRect?.x1 != null) return Number(pos.boundingRect.x1) || 0
+        if (Array.isArray(pos?.rects) && pos.rects.length > 0) {
+          const xs = pos.rects
+            .map((r: any) => Number(r?.x1))
+            .filter((x: number) => Number.isFinite(x))
+          if (xs.length) return Math.min(...xs)
+        }
+        return 0
+      }
+
+      return getLeft(a) - getLeft(b)
+    })
+  }, [filteredByFilters])
+
   const handleDeleteConfirm = React.useCallback(() => {
     if (deleteCommentId && onDelete) {
       onDelete(deleteCommentId)
@@ -564,7 +592,7 @@ export function CommentsTableModal({
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
-    data: filteredByFilters,
+    data: sortedComments,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),

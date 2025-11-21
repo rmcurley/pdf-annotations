@@ -497,7 +497,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     const value = scaleMode === 'page-fit' ? 'page-fit'
                 : scaleMode === 'page-width' ? 'page-width'
                 : (scale / 100).toString()
-    console.log('Scale value:', value, 'Mode:', scaleMode, 'Scale:', scale)
     return value
   }
 
