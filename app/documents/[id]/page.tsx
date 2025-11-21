@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import type { PostgrestResponse, PostgrestSingleResponse } from '@supabase/supabase-js'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
@@ -29,6 +30,15 @@ type UserProfile = {
   last_name: string | null
   email: string
   avatar_url: string | null
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, ms = 45000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out')), ms)
+    ),
+  ])
 }
 
 interface Document {
@@ -93,15 +103,6 @@ export default function DocumentPage() {
 
   const [tableViewOpen, setTableViewOpen] = useState(false)
 
-  const withTimeout = useCallback(<T,>(promise: Promise<T>, ms = 45000): Promise<T> =>
-    Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), ms)
-      ),
-    ])
-  , [])
-
   // Separate effect for body overflow to ensure DOM is ready
   useEffect(() => {
     // Wait for next tick to ensure body is available
@@ -152,9 +153,9 @@ export default function DocumentPage() {
 
   const fetchDocument = useCallback(async () => {
     try {
-      const { data, error } = await withTimeout(
+      const { data, error } = await withTimeout<PostgrestSingleResponse<Document>>(
         supabase
-          .from<Document>('documents')
+          .from('documents')
           .select('*')
           .eq('id', documentId)
           .single()
@@ -177,9 +178,9 @@ export default function DocumentPage() {
       }
 
       // Fetch all projects for sidebar
-      const { data: allProjectsData, error: allProjectsError } = await withTimeout(
+      const { data: allProjectsData, error: allProjectsError } = await withTimeout<PostgrestResponse<Project>>(
         supabase
-          .from<Project>('projects')
+          .from('projects')
           .select('id, name')
           .order('name')
       )
@@ -189,9 +190,9 @@ export default function DocumentPage() {
       }
 
       // Fetch all documents for sidebar
-      const { data: allDocsData, error: allDocsError } = await withTimeout(
+      const { data: allDocsData, error: allDocsError } = await withTimeout<PostgrestResponse<{ id: string; name: string; project_id: string }>>(
         supabase
-          .from<{ id: string; name: string; project_id: string }>('documents')
+          .from('documents')
           .select('id, name, project_id')
           .order('name')
       )
@@ -208,9 +209,9 @@ export default function DocumentPage() {
 
   const fetchComments = useCallback(async () => {
     try {
-      const { data: commentsData, error } = await withTimeout(
+      const { data: commentsData, error } = await withTimeout<PostgrestResponse<Comment>>(
         supabase
-          .from<Comment>('comments')
+          .from('comments')
           .select('*')
           .eq('document_id', documentId)
           .order('created_at', { ascending: false })
@@ -231,9 +232,9 @@ export default function DocumentPage() {
       const usersMap = new Map<string, UserProfile>()
 
       if (userIds.length > 0) {
-        const { data: usersData, error: usersError } = await withTimeout(
+        const { data: usersData, error: usersError } = await withTimeout<PostgrestResponse<UserProfile>>(
           supabase
-            .from<UserProfile>('users')
+            .from('users')
             .select('id, first_name, last_name, email, avatar_url')
             .in('id', userIds)
         )

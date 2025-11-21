@@ -163,7 +163,7 @@ export default function Page() {
           let userMap: Record<string, UserProfile> = {}
           if (userIds.length > 0) {
             const { data: usersData, error: usersError } = await supabase
-              .from<UserProfile>('users')
+              .from('users')
               .select('id, first_name, last_name, email, avatar_url')
               .in('id', userIds)
 
