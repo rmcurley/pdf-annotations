@@ -34,7 +34,7 @@ type UserProfile = {
 
 const fetchWithAbort = async <T,>(
   label: string,
-  fn: () => Promise<T>,
+  fn: () => PromiseLike<T>,
   ms = 30000
 ): Promise<T> => {
   const startedAt = Date.now()
@@ -45,7 +45,7 @@ const fetchWithAbort = async <T,>(
   try {
     console.log(`[documents] ${label}:start`, { ms })
     const result = await Promise.race([
-      fn(),
+      Promise.resolve(fn()),
       new Promise<T>((_, reject) =>
         setTimeout(() => reject(new Error('Request timed out')), ms)
       ),
