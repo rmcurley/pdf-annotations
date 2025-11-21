@@ -32,13 +32,29 @@ type UserProfile = {
   avatar_url: string | null
 }
 
-function withTimeout<T>(promise: PromiseLike<T>, ms = 45000): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('Request timed out')), ms)
-    ),
-  ])
+const fetchWithAbort = async <T,>(
+  label: string,
+  fn: (signal: AbortSignal) => Promise<T>,
+  ms = 30000
+): Promise<T> => {
+  const controller = new AbortController()
+  const startedAt = Date.now()
+  const timer = setTimeout(() => controller.abort('timeout'), ms)
+
+  try {
+    console.log(`[documents] ${label}:start`, { ms })
+    const result = await fn(controller.signal)
+    console.log(`[documents] ${label}:success`, { ms: Date.now() - startedAt })
+    return result
+  } catch (error) {
+    console.error(`[documents] ${label}:error`, {
+      error,
+      ms: Date.now() - startedAt,
+    })
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 interface Document {
@@ -162,18 +178,17 @@ export default function DocumentPage() {
 
   const fetchDocument = useCallback(async () => {
     try {
-      const startedAt = Date.now()
-      console.log('[documents] fetchDocument:start', { documentId })
-      const { data, error } = await withTimeout<PostgrestSingleResponse<Document>>(
-        supabase
-          .from('documents')
-          .select('*')
-          .eq('id', documentId)
-          .single()
+      const { data, error } = await fetchWithAbort<PostgrestSingleResponse<Document>>(
+        'fetchDocument',
+        (signal) =>
+          supabase
+            .from('documents')
+            .select('*')
+            .eq('id', documentId)
+            .single()
       )
 
       if (error) throw error
-      console.log('[documents] fetchDocument:success', { documentId, ms: Date.now() - startedAt })
       setDocument(data)
 
       // Fetch the project for this document
@@ -190,11 +205,13 @@ export default function DocumentPage() {
       }
 
       // Fetch all projects for sidebar
-      const { data: allProjectsData, error: allProjectsError } = await withTimeout<PostgrestResponse<Project>>(
-        supabase
-          .from('projects')
-          .select('id, name')
-          .order('name')
+      const { data: allProjectsData, error: allProjectsError } = await fetchWithAbort<PostgrestResponse<Project>>(
+        'fetchAllProjects',
+        (signal) =>
+          supabase
+            .from('projects')
+            .select('id, name')
+            .order('name')
       )
 
       if (!allProjectsError && allProjectsData) {
@@ -202,11 +219,13 @@ export default function DocumentPage() {
       }
 
       // Fetch all documents for sidebar
-      const { data: allDocsData, error: allDocsError } = await withTimeout<PostgrestResponse<{ id: string; name: string; project_id: string }>>(
-        supabase
-          .from('documents')
-          .select('id, name, project_id')
-          .order('name')
+      const { data: allDocsData, error: allDocsError } = await fetchWithAbort<PostgrestResponse<{ id: string; name: string; project_id: string }>>(
+        'fetchAllDocuments',
+        (signal) =>
+          supabase
+            .from('documents')
+            .select('id, name, project_id')
+            .order('name')
       )
 
       if (!allDocsError && allDocsData) {
@@ -217,18 +236,18 @@ export default function DocumentPage() {
     } finally {
       setLoading(false)
     }
-  }, [documentId, supabase, withTimeout])
+  }, [documentId, supabase])
 
   const fetchComments = useCallback(async () => {
     try {
-      const startedAt = Date.now()
-      console.log('[documents] fetchComments:start', { documentId })
-      const { data: commentsData, error } = await withTimeout<PostgrestResponse<Comment>>(
-        supabase
-          .from('comments')
-          .select('*')
-          .eq('document_id', documentId)
-          .order('created_at', { ascending: false })
+      const { data: commentsData, error } = await fetchWithAbort<PostgrestResponse<Comment>>(
+        'fetchComments',
+        (signal) =>
+          supabase
+            .from('comments')
+            .select('*')
+            .eq('document_id', documentId)
+            .order('created_at', { ascending: false })
       )
 
       if (error) {
@@ -240,19 +259,21 @@ export default function DocumentPage() {
         })
         throw error
       }
-      console.log('[documents] fetchComments:success', { documentId, count: (commentsData || []).length, ms: Date.now() - startedAt })
+      console.log('[documents] fetchComments:success', { documentId, count: (commentsData || []).length })
 
       // Fetch user data for comments that have a user_id
       const userIds = [...new Set((commentsData || []).map((c) => c.user_id).filter(Boolean) as string[])]
       const usersMap = new Map<string, UserProfile>()
 
       if (userIds.length > 0) {
-        const { data: usersData, error: usersError } = await withTimeout<PostgrestResponse<UserProfile>>(
+        const { data: usersData, error: usersError } = await fetchWithAbort<PostgrestResponse<UserProfile>>(
+        'fetchCommentUsers',
+        (signal) =>
           supabase
             .from('users')
             .select('id, first_name, last_name, email, avatar_url')
             .in('id', userIds)
-        )
+      )
 
         if (!usersError && usersData) {
           usersData.forEach((profile) => {
@@ -273,7 +294,7 @@ export default function DocumentPage() {
       // Set empty comments array to prevent UI issues
       setComments([])
     }
-  }, [documentId, supabase, withTimeout])
+  }, [documentId, supabase])
 
   useEffect(() => {
     fetchDocument()
