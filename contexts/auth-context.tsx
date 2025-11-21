@@ -32,17 +32,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<ExtendedUser | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
-  const withTimeout = useCallback(
-    async <T,>(promise: Promise<T>, ms = 20000): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error('Request timed out')), ms)
-        ),
-      ])
-    },
-    []
-  )
 
   const fetchUserProfile = useCallback(async (authUser: User): Promise<ExtendedUser> => {
     try {
@@ -105,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase])
 
   const refreshProfile = async () => {
-    const { data: { session } } = await withTimeout(supabase.auth.getSession())
+    const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
       const extendedUser = await fetchUserProfile(session.user)
       setUser(extendedUser)
@@ -114,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Get initial session
-    withTimeout(supabase.auth.getSession())
+    supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (session?.user) {
           const extendedUser = await fetchUserProfile(session.user)
@@ -124,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch((error) => {
-        console.error('auth getSession timed out or failed:', error)
+        console.error('auth getSession failed:', error)
         setUser(null)
       })
       .finally(() => setLoading(false))
