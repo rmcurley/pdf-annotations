@@ -1,7 +1,9 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { User } from '@supabase/supabase-js'
+import { User, Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 
 // Extended user type that includes profile data from users table
@@ -104,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
+      .then(async ({ data: { session } }: { data: { session: Session | null } }) => {
         if (session?.user) {
           const extendedUser = await fetchUserProfile(session.user)
           setUser(extendedUser)
@@ -112,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
         }
       })
-      .catch((error) => {
+      .catch((error: any) => {
         console.error('auth getSession failed:', error)
         setUser(null)
       })
@@ -121,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event: any, session: Session | null) => {
       try {
         if (session?.user) {
           const extendedUser = await fetchUserProfile(session.user)
@@ -129,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUser(null)
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('auth state change failed:', error)
         setUser(session?.user || null)
       } finally {

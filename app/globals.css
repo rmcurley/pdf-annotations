@@ -177,28 +177,17 @@
   background-color: transparent !important;
 }
 
-/* PDF Search Highlighting - CSS Highlight API (modern browsers) */
-::highlight(pdf-search-results) {
-  background-color: transparent;
-  text-decoration: underline;
-  text-decoration-color: #3b82f6;
-  text-decoration-thickness: 2px;
-}
-
-::highlight(pdf-search-current) {
-  background-color: transparent;
-  text-decoration: underline;
-  text-decoration-color: #1d4ed8;
-  text-decoration-thickness: 3px;
-}
-
-/* PDF Search Highlighting - Fallback for older browsers */
+/* PDF Search Highlighting */
 .pdf-search-highlight-element {
-  border-bottom: 1px solid #93c5fd !important;
+  text-decoration: underline !important;
+  text-decoration-color: #3b82f6 !important;
+  text-decoration-thickness: 2px !important;
 }
 
 .pdf-search-highlight-current-element {
-  border-bottom: 1.5px solid #3b82f6 !important;
+  text-decoration: underline !important;
+  text-decoration-color: #1d4ed8 !important;
+  text-decoration-thickness: 3px !important;
 }
 
 /* PDF Viewer Background */

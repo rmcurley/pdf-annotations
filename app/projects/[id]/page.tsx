@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { AppSidebar } from "@/components/app-sidebar"
@@ -114,7 +116,7 @@ export default function Page() {
 
       if (docsError) throw docsError
 
-      const documentIds = docsData?.map(doc => doc.id) || []
+      const documentIds = docsData?.map((doc: { id: string }) => doc.id) || []
       let documentsWithReviewers = docsData || []
 
       if (documentIds.length > 0) {
@@ -129,7 +131,7 @@ export default function Page() {
         if (assigneesResult.error) {
           console.error('Error fetching assignees:', assigneesResult.error)
         } else if (assigneesResult.data) {
-          const reviewersByDoc = assigneesResult.data.reduce((acc, assignee) => {
+          const reviewersByDoc = assigneesResult.data.reduce((acc: Record<string, string[]>, assignee: { document_id: string; user_id: string }) => {
             if (!acc[assignee.document_id]) {
               acc[assignee.document_id] = []
             }
@@ -137,7 +139,7 @@ export default function Page() {
             return acc
           }, {} as Record<string, string[]>)
 
-          documentsWithReviewers = docsData!.map(doc => ({
+          documentsWithReviewers = docsData!.map((doc: { id: string }) => ({
             ...doc,
             reviewers: reviewersByDoc[doc.id] || []
           }))
@@ -145,7 +147,7 @@ export default function Page() {
 
         // Process Summary Comments
         if (commentsResult.error) throw commentsResult.error
-        const summaryComments: CommentSummary[] = (commentsResult.data || []).map((comment) => ({
+        const summaryComments: CommentSummary[] = (commentsResult.data || []).map((comment: { id: string; document_id: string; comment_status: string; created_at: string }) => ({
           id: comment.id,
           document_id: comment.document_id,
           comment_status: comment.comment_status,
@@ -161,7 +163,7 @@ export default function Page() {
           const fullCommentsData = fullCommentsResult.data || []
 
           // Extract unique user IDs
-          const userIds = Array.from(new Set(fullCommentsData.map(c => c.user_id).filter(Boolean))) as string[]
+          const userIds = Array.from(new Set(fullCommentsData.map((c: { user_id: string }) => c.user_id).filter(Boolean))) as string[]
 
           // Batch fetch users
           let userMap: Record<string, UserProfile> = {}
@@ -174,7 +176,7 @@ export default function Page() {
             if (usersError) {
               console.error('Error fetching users:', usersError)
             } else {
-              userMap = (usersData || []).reduce((acc, user) => {
+              userMap = (usersData || []).reduce((acc: Record<string, UserProfile>, user: UserProfile) => {
                 acc[user.id] = user
                 return acc
               }, {} as Record<string, UserProfile>)
@@ -182,7 +184,7 @@ export default function Page() {
           }
 
           // Map users to comments
-          const commentsWithUsers = fullCommentsData.map(comment => {
+          const commentsWithUsers = fullCommentsData.map((comment: any) => {
             let mappedUser: TableComment['users'] = undefined
 
             if (comment.user_id && userMap[comment.user_id]) {

@@ -64,6 +64,7 @@ import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
+import { Separator } from '@/components/ui/separator'
 import {
   Tooltip,
   TooltipContent,
@@ -292,7 +293,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatches, setSearchMatches] = useState<Element[]>([])
-  const [searchRanges, setSearchRanges] = useState<Range[]>([])
   const [currentMatch, setCurrentMatch] = useState<number>(0)
   const [pageJumpOpen, setPageJumpOpen] = useState(false)
   const [pageJumpValue, setPageJumpValue] = useState('')
@@ -804,16 +804,9 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       // Clear search when closing
       setSearchQuery('')
       setSearchMatches([])
-      setSearchRanges([])
       setCurrentMatch(0)
 
-      // Clear CSS custom highlights
-      if ('highlights' in CSS) {
-        (CSS as any).highlights.delete('pdf-search-results')
-        ;(CSS as any).highlights.delete('pdf-search-current')
-      }
-
-      // Remove fallback class-based highlights
+      // Remove highlights
       document.querySelectorAll('.pdf-search-highlight-element').forEach(el => {
         el.classList.remove('pdf-search-highlight-element')
       })
@@ -825,13 +818,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   // Perform the actual search (called after debounce)
   const performSearch = useCallback((query: string) => {
-    // Clear CSS custom highlights
-    if ('highlights' in CSS) {
-      (CSS as any).highlights.delete('pdf-search-results')
-      ;(CSS as any).highlights.delete('pdf-search-current')
-    }
-
-    // Remove previous class-based highlights (fallback)
+    // Remove previous highlights
     document.querySelectorAll('.pdf-search-highlight-element').forEach(el => {
       el.classList.remove('pdf-search-highlight-element')
     })
@@ -842,7 +829,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     if (query.trim()) {
       const textLayers = document.querySelectorAll('.textLayer')
       const matches: Element[] = []
-      const matchRanges: Range[] = []
       const seenPositions = new Set<string>()
 
       textLayers.forEach(layer => {
@@ -857,61 +843,31 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
           const lowerText = text.toLowerCase()
           const lowerQuery = query.toLowerCase()
-          const matchIndex = lowerText.indexOf(lowerQuery)
 
-          if (matchIndex !== -1) {
+          if (lowerText.includes(lowerQuery)) {
             const rect = el.getBoundingClientRect()
             if (rect.width === 0 || rect.height === 0) return
 
-            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${matchIndex}`
+            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${text}`
 
             if (!seenPositions.has(positionKey)) {
               seenPositions.add(positionKey)
+              el.classList.add('pdf-search-highlight-element')
               matches.push(el)
-
-              // Create a Range for just the matching text (for CSS Highlight API)
-              if ('highlights' in CSS && el.firstChild) {
-                try {
-                  const range = new Range()
-                  range.setStart(el.firstChild, matchIndex)
-                  range.setEnd(el.firstChild, matchIndex + query.length)
-                  matchRanges.push(range)
-                } catch (e) {
-                  // Fallback to class-based highlight if range fails
-                  el.classList.add('pdf-search-highlight-element')
-                }
-              } else {
-                // Fallback for browsers without CSS Highlight API
-                el.classList.add('pdf-search-highlight-element')
-              }
             }
           }
         })
       })
 
-      // Register highlights with CSS Highlight API
-      if ('highlights' in CSS && matchRanges.length > 0) {
-        const searchHighlight = new (window as any).Highlight(...matchRanges)
-        ;(CSS as any).highlights.set('pdf-search-results', searchHighlight)
-      }
-
       setSearchMatches(matches)
-      setSearchRanges(matchRanges)
       if (matches.length > 0) {
         setCurrentMatch(1)
-        // Highlight first match as current
-        if ('highlights' in CSS && matchRanges.length > 0) {
-          const currentHighlight = new (window as any).Highlight(matchRanges[0])
-          ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
-        } else {
-          matches[0].classList.add('pdf-search-highlight-current-element')
-        }
+        matches[0].classList.add('pdf-search-highlight-current-element')
       } else {
         setCurrentMatch(0)
       }
     } else {
       setSearchMatches([])
-      setSearchRanges([])
       setCurrentMatch(0)
     }
   }, [])
@@ -933,19 +889,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   const handleNextMatch = () => {
     if (currentMatch < searchMatches.length && searchMatches.length > 0) {
+      // Remove current highlight
+      searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
+
       const nextIndex = currentMatch
-
-      // Update CSS Highlight API current highlight
-      if ('highlights' in CSS && searchRanges.length > nextIndex) {
-        const currentHighlight = new (window as any).Highlight(searchRanges[nextIndex])
-        ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
-      } else {
-        // Fallback: class-based highlighting
-        searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
-        searchMatches[nextIndex].classList.add('pdf-search-highlight-current-element')
-      }
-
       setCurrentMatch(nextIndex + 1)
+
+      // Add current highlight to next match
+      searchMatches[nextIndex].classList.add('pdf-search-highlight-current-element')
 
       // Scroll to match
       searchMatches[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -954,19 +905,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   const handlePreviousMatch = () => {
     if (currentMatch > 1 && searchMatches.length > 0) {
+      // Remove current highlight
+      searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
+
       const prevIndex = currentMatch - 2
-
-      // Update CSS Highlight API current highlight
-      if ('highlights' in CSS && searchRanges.length > prevIndex) {
-        const currentHighlight = new (window as any).Highlight(searchRanges[prevIndex])
-        ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
-      } else {
-        // Fallback: class-based highlighting
-        searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
-        searchMatches[prevIndex].classList.add('pdf-search-highlight-current-element')
-      }
-
       setCurrentMatch(prevIndex + 1)
+
+      // Add current highlight to previous match
+      searchMatches[prevIndex].classList.add('pdf-search-highlight-current-element')
 
       // Scroll to match
       searchMatches[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -1594,8 +1540,8 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         {/* Navigation Bar at Bottom */}
         <div className="flex-shrink-0 bg-card border-t border-border px-6 py-2 rounded-bl-lg">
           <TooltipProvider delayDuration={300}>
-            <div className="flex items-center justify-center gap-3">
-              {/* Search Button */}
+            <div className="flex items-center justify-between">
+              {/* Search Button - Far Left */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -1612,10 +1558,9 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                 </TooltipContent>
               </Tooltip>
 
-              {/* Divider */}
-              <div className="h-6 w-px bg-border"></div>
-
-              {/* Page Navigation */}
+              {/* Center Controls */}
+              <div className="flex items-center gap-3">
+                {/* Page Navigation */}
               <div className="flex items-center gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1683,7 +1628,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               </div>
 
               {/* Divider */}
-              <div className="h-6 w-px bg-border"></div>
+              <div className="h-6 bg-border flex-none" style={{ width: '1px' }}></div>
 
               {/* Zoom Controls */}
               <div className="flex items-center gap-2">
@@ -1742,7 +1687,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
               </div>
 
               {/* Divider */}
-              <div className="h-6 w-px bg-border"></div>
+              <div className="h-6 bg-border flex-none" style={{ width: '1px' }}></div>
 
               {/* Page Fit and Width Buttons */}
               <div className="flex items-center gap-1">
@@ -1779,12 +1724,11 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     <p>Fit Width</p>
                   </TooltipContent>
                 </Tooltip>
+              </div>
+              </div>
 
-                {/* Divider */}
-                <div className="h-6 w-px bg-border"></div>
-
-                {/* Bookmarks Button */}
-                <Popover open={bookmarksOpen} onOpenChange={setBookmarksOpen}>
+              {/* Bookmarks Button - Far Right */}
+              <Popover open={bookmarksOpen} onOpenChange={setBookmarksOpen}>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <PopoverTrigger asChild>
@@ -1832,7 +1776,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     </div>
                   </PopoverContent>
                 </Popover>
-              </div>
             </div>
           </TooltipProvider>
         </div>

@@ -1,5 +1,7 @@
 "use client"
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import * as React from "react"
 import { IconMail, IconTrash, IconPencil, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconDots } from "@tabler/icons-react"
 import { ChevronUp, ChevronDown } from "lucide-react"
@@ -234,8 +236,8 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
       if (membersError) throw membersError
 
       // Transform users data to include project count
-      const transformedUsers: UserRow[] = (usersData || []).map((user) => {
-        const userProjects = (membersData || []).filter(m => m.user_id === user.id)
+      const transformedUsers: UserRow[] = (usersData || []).map((user: any) => {
+        const userProjects = (membersData || []).filter((m: { user_id: string; project_id: string }) => m.user_id === user.id)
         return {
           id: user.id,
           first_name: user.first_name || '',
@@ -244,7 +246,7 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
           role: user.role || 'member',
           avatar_url: user.avatar_url,
           project_count: userProjects.length,
-          project_ids: userProjects.map(p => p.project_id),
+          project_ids: userProjects.map((p: { project_id: string }) => p.project_id),
         }
       })
 

@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useState, useEffect, useCallback } from 'react'
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
@@ -71,7 +73,7 @@ export default function ProjectsPage() {
 
       if (membersError) throw membersError
 
-      const userProjectIds = (membersData || []).map(m => m.project_id)
+      const userProjectIds = (membersData || []).map((m: { project_id: string }) => m.project_id)
 
       // Fetch only projects the user has access to (unless admin)
       const isAdmin = user?.profile?.role === 'admin'
@@ -95,7 +97,7 @@ export default function ProjectsPage() {
       setProjects(projectsData || [])
 
       // Fetch documents only for accessible projects
-      const accessibleProjectIds = projectsData?.map(p => p.id) || []
+      const accessibleProjectIds = projectsData?.map((p: { id: string }) => p.id) || []
       let docsQuery = supabase
         .from('documents')
         .select('id, name, project_id, page_count, created_at')
@@ -117,7 +119,7 @@ export default function ProjectsPage() {
       setAllDocuments(docsData || [])
 
       // Fetch comments only for accessible documents
-      const documentIds = docsData?.map(d => d.id) || []
+      const documentIds = docsData?.map((d: { id: string }) => d.id) || []
       if (documentIds.length > 0) {
         const { data: commentsData, error: commentsError } = await supabase
           .from('comments')

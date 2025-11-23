@@ -1,5 +1,7 @@
 "use client"
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -202,7 +204,7 @@ function ReviewerCell({ documentId, projectId, reviewers, onReviewersChange }: R
 
         if (membersError) throw membersError
 
-        const userIds = (members || []).map(m => m.user_id)
+        const userIds = (members || []).map((m: { user_id: string }) => m.user_id)
 
         if (userIds.length === 0) {
           setAllUsers([])
