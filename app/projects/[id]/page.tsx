@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { buttonVariants } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase/client"
 
 interface Project {
   id: string
@@ -61,6 +61,7 @@ type UserProfile = {
 export default function Page() {
   const params = useParams()
   const projectId = params.id as string
+  const supabase = useMemo(() => createClient(), [])
 
   const [currentProject, setCurrentProject] = useState<Project | null>(null)
   const [allProjects, setAllProjects] = useState<Project[]>([])
@@ -83,9 +84,12 @@ export default function Page() {
         .from('projects')
         .select('id, name')
         .eq('id', projectId)
-        .single()
+        .maybeSingle()
 
       if (projectError) throw projectError
+      if (!projectData) {
+        throw new Error('Project not found or access denied')
+      }
       setCurrentProject(projectData)
 
       // 2. Run independent fetches in parallel
@@ -219,7 +223,7 @@ export default function Page() {
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [projectId, supabase])
 
   useEffect(() => {
     fetchData()
@@ -340,7 +344,7 @@ export default function Page() {
       console.error('Error updating annotation:', error)
       alert('Failed to update annotation')
     }
-  }, [fetchData])
+  }, [fetchData, supabase])
 
   const handleDeleteComment = async (commentId: string) => {
     try {

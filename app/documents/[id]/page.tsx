@@ -14,15 +14,7 @@ import { CommentsTableModal } from '@/components/comments-table-modal'
 import { PdfViewerWrapper } from '@/components/pdf-viewer-wrapper'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
-import type { IHighlight, NewHighlight } from 'react-pdf-highlighter'
-
-type HighlightPosition = IHighlight['position']
-type ExtendedHighlightComment = IHighlight['comment'] & {
-  type: string
-  status: string
-  user_name: string
-  annotation_id?: string | null
-}
+import type { IHighlight, NewHighlight, HighlightPosition, ExtendedHighlightComment } from '@/lib/highlight-types'
 
 type UserProfile = {
   id: string
@@ -151,9 +143,10 @@ export default function DocumentPage() {
 
     const normalizeHighlightPosition = (position: HighlightPosition | null): HighlightPosition => {
       if (!position) return {} as HighlightPosition
-      const normalizedPageNumber = Number((position as any).pageNumber)
+      const { onUpdate, ...rest } = position as any
+      const normalizedPageNumber = Number((rest as any).pageNumber)
       return {
-        ...position,
+        ...rest,
         pageNumber: Number.isFinite(normalizedPageNumber) ? normalizedPageNumber : 1,
       }
     }
@@ -350,8 +343,14 @@ export default function DocumentPage() {
     if (!document) return
 
     try {
-      // Extract page number from position
-      const pageNumber = highlight.position.pageNumber || 1
+      // Extract page number from position (handle both old and new format)
+      const pageNumber = (highlight.position as any).pageNumber || highlight.position.boundingRect?.pageNumber || 1
+
+      // Strip any non-serializable or event-like fields from position before saving
+      const cleanPosition = (() => {
+        const { onUpdate, ...rest } = highlight.position as any
+        return rest
+      })()
 
       console.log('Inserting comment:', {
         document_id: documentId,
@@ -362,7 +361,7 @@ export default function DocumentPage() {
         comment_type: type,
         comment_status: status,
         highlighted_text: highlight.content.text || null,
-        highlight_position: highlight.position,
+        highlight_position: cleanPosition,
       })
 
       const { data, error } = await supabase
@@ -376,7 +375,7 @@ export default function DocumentPage() {
           comment_type: type,
           comment_status: status,
           highlighted_text: highlight.content.text || null,
-          highlight_position: highlight.position,
+          highlight_position: cleanPosition,
           user_id: user?.id || null,
         })
         .select()

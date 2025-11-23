@@ -2,19 +2,64 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import {
   PdfLoader,
   PdfHighlighter,
-  Highlight,
-  Popup,
+  TextHighlight,
   AreaHighlight,
-} from 'react-pdf-highlighter'
+  MonitoredHighlightContainer,
+  useHighlightContainerContext,
+} from 'react-pdf-highlighter-extended'
 import type {
-  IHighlight,
-  NewHighlight,
-  ScaledPosition,
-} from 'react-pdf-highlighter'
+  Highlight,
+  PdfSelection,
+  PdfHighlighterUtils,
+} from 'react-pdf-highlighter-extended'
+import type { IHighlight, NewHighlight } from '@/lib/highlight-types'
+
+// Migration function: converts old position format to new format
+// Old: { boundingRect: {...}, rects: [...], pageNumber: 5 }
+// New: { boundingRect: {..., pageNumber: 5}, rects: [{..., pageNumber: 5}, ...] }
+function migrateHighlightPosition(highlight: IHighlight): IHighlight {
+  const position = highlight.position as any
+  if (!position) return highlight
+
+  // Check if already in new format (pageNumber inside boundingRect)
+  if (position.boundingRect?.pageNumber !== undefined) {
+    return highlight
+  }
+
+  // Get pageNumber from position level (old format)
+  const pageNumber = position.pageNumber ?? 1
+
+  // Migrate boundingRect
+  const boundingRect = position.boundingRect
+    ? { ...position.boundingRect, pageNumber }
+    : position.boundingRect
+
+  // Migrate rects array
+  const rects = Array.isArray(position.rects)
+    ? position.rects.map((rect: any) => ({
+        ...rect,
+        pageNumber: rect.pageNumber ?? pageNumber,
+      }))
+    : position.rects
+
+  return {
+    ...highlight,
+    position: {
+      boundingRect,
+      rects,
+      usePdfCoordinates: position.usePdfCoordinates,
+    },
+  } as IHighlight
+}
+
+// Migrate array of highlights
+function migrateHighlights(highlights: IHighlight[]): IHighlight[] {
+  return highlights.map(migrateHighlightPosition)
+}
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Badge } from '@/components/ui/badge'
@@ -30,32 +75,192 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, UnfoldVertical, Loader2, UsersRound, Save } from 'lucide-react'
+import { MessageSquare, MessageCircle, Pencil, CircleUserRound, CircleHelp, CircleCheck, CircleX, Minus, Plus, MoveVertical, MoveHorizontal, ChevronUp, ChevronDown, Search, Ban, Loader2, UsersRound, Save, Bookmark } from 'lucide-react'
 import { CommentDrawer } from './comment-drawer'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { SearchInput } from '@/components/search-input'
 import { formatAnnotationId } from '@/lib/comment-utils'
 
-const HighlightWrapper = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
->((props, ref) => {
-  const { onUpdate, ...rest } = props
-  void onUpdate
-  return <div ref={ref} {...rest} />
-})
-HighlightWrapper.displayName = 'HighlightWrapper'
+// Helper functions for highlight styling
+const getTypeIcon = (type: string) => {
+  switch (type?.toLowerCase()) {
+    case 'edit':
+      return Pencil
+    case 'discussion':
+      return UsersRound
+    case 'comment':
+    default:
+      return MessageCircle
+  }
+}
 
-const PopupContentWrapper = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { onUpdate?: unknown }
->((props, ref) => {
-  const { onUpdate, ...rest } = props
-  void onUpdate
-  return <div ref={ref} {...rest} />
-})
-PopupContentWrapper.displayName = 'PopupContentWrapper'
+const getStatusColor = (status: string) => {
+  switch (status?.toLowerCase()) {
+    case 'accepted':
+      return {
+        bg: 'bg-emerald-100 dark:bg-emerald-900/30',
+        icon: 'text-emerald-600 dark:text-emerald-400',
+        badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+      }
+    case 'rejected':
+      return {
+        bg: 'bg-red-100 dark:bg-red-900/30',
+        icon: 'text-red-600 dark:text-red-400',
+        badge: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+      }
+    case 'proposed':
+    default:
+      return {
+        bg: 'bg-amber-100 dark:bg-amber-900/30',
+        icon: 'text-amber-600 dark:text-amber-400',
+        badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+      }
+  }
+}
+
+const formatStatus = (status: string) => {
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
+}
+
+// Highlight container component that renders each highlight
+interface HighlightContainerProps {
+  selectedHighlightId?: string | null
+  onHighlightClick?: (highlightId: string) => void
+}
+
+function HighlightContainer({ selectedHighlightId, onHighlightClick }: HighlightContainerProps) {
+  const { highlight, isScrolledTo } = useHighlightContainerContext<IHighlight>()
+
+  const isSelected = selectedHighlightId === highlight.id
+  const commentType = (highlight.comment as any)?.type || 'comment'
+  const commentStatus = (highlight.comment as any)?.status || 'proposed'
+  const TypeIcon = getTypeIcon(commentType)
+  const statusColors = getStatusColor(commentStatus)
+  const formattedId =
+    (highlight.comment as any)?.annotation_id ||
+    formatAnnotationId({
+      id: highlight.id || "",
+      annotation_id: (highlight.comment as any)?.annotation_id,
+    } as any)
+
+  const handleClick = () => {
+    if (onHighlightClick && highlight.id) {
+      onHighlightClick(highlight.id)
+    }
+  }
+
+  // Determine highlight type based on content
+  const isAreaHighlight = highlight.type === 'area' || (!highlight.content?.text && highlight.content?.image)
+
+  // Cast highlight to ViewportHighlight for the component props
+  const viewportHighlight = highlight as any
+
+  const highlightComponent = isAreaHighlight ? (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          handleClick()
+        }
+      }}
+    >
+      <AreaHighlight
+        highlight={viewportHighlight}
+        isScrolledTo={isSelected || isScrolledTo}
+        onChange={() => {}}
+      />
+    </div>
+  ) : (
+    <TextHighlight
+      highlight={viewportHighlight}
+      isScrolledTo={isSelected || isScrolledTo}
+      onClick={handleClick}
+    />
+  )
+
+  // If no comment text, just show the highlight without popup
+  if (!highlight.comment?.text?.trim()) {
+    return (
+      <div
+        data-highlight-id={highlight.id}
+        className={isSelected ? 'custom-highlight-selected' : ''}
+      >
+        {highlightComponent}
+      </div>
+    )
+  }
+
+  // Create tip content for the popup
+  const tipContent = (
+    <div
+      className="bg-card border border-border rounded-lg p-3 shadow-xl text-sm max-w-sm cursor-pointer"
+      onClick={handleClick}
+    >
+      {/* Top line - Type icon, ID, and Status badge */}
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2">
+          {/* Type Icon */}
+          <div className={`w-6 h-6 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
+            <TypeIcon className={`w-3.5 h-3.5 ${statusColors.icon}`} />
+          </div>
+          {/* Annotation ID */}
+          <div className="font-semibold text-sm">
+            {formattedId}
+          </div>
+        </div>
+        {/* Status Badge */}
+        <Badge variant="secondary" className={`${statusColors.badge} border-0 flex items-center gap-1 text-xs px-2 py-0.5 flex-shrink-0`}>
+          {commentStatus.toLowerCase() === 'proposed' && (
+            <CircleHelp className="w-3 h-3" />
+          )}
+          {commentStatus.toLowerCase() === 'accepted' && (
+            <CircleCheck className="w-3 h-3" />
+          )}
+          {commentStatus.toLowerCase() === 'rejected' && (
+            <CircleX className="w-3 h-3" />
+          )}
+          {formatStatus(commentStatus)}
+        </Badge>
+      </div>
+
+      {/* Annotation text */}
+      <div className="text-foreground leading-relaxed mb-2">
+        {highlight.comment?.text}
+      </div>
+
+      {/* Separator */}
+      <div className="border-t border-border my-2"></div>
+
+      {/* User info - right aligned */}
+      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+        <CircleUserRound className="w-3.5 h-3.5" />
+        <span>{(highlight.comment as any)?.user_name || 'Unknown User'}</span>
+      </div>
+    </div>
+  )
+
+  // Use MonitoredHighlightContainer for hover popup functionality
+  return (
+    <MonitoredHighlightContainer
+      highlightTip={{
+        position: highlight.position,
+        content: tipContent,
+      }}
+      onMouseEnter={handleClick}
+    >
+      <div
+        data-highlight-id={highlight.id}
+        className={isSelected || isScrolledTo ? 'custom-highlight-selected' : ''}
+      >
+        {highlightComponent}
+      </div>
+    </MonitoredHighlightContainer>
+  )
+}
 
 interface PdfViewerProps {
   pdfUrl: string
@@ -77,7 +282,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [showAddButton, setShowAddButton] = useState(false)
   const [buttonPosition, setButtonPosition] = useState<{ x: number; y: number } | null>(null)
   const [inlineAnnotationType, setInlineAnnotationType] = useState<'comment' | 'edit' | 'discussion'>('comment')
-  const [showInlineDetails, setShowInlineDetails] = useState(false)
   const [inlineAnnotationText, setInlineAnnotationText] = useState('')
   const [inlineSaving, setInlineSaving] = useState(false)
   const [inlinePlacement, setInlinePlacement] = useState<'above' | 'below'>('above')
@@ -88,9 +292,12 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatches, setSearchMatches] = useState<Element[]>([])
+  const [searchRanges, setSearchRanges] = useState<Range[]>([])
   const [currentMatch, setCurrentMatch] = useState<number>(0)
   const [pageJumpOpen, setPageJumpOpen] = useState(false)
   const [pageJumpValue, setPageJumpValue] = useState('')
+  const [bookmarksOpen, setBookmarksOpen] = useState(false)
+  const [bookmarks, setBookmarks] = useState<any[]>([])
   const scrollToHighlightRef = React.useRef<((highlight: IHighlight) => void) | null>(null)
   const pdfBookmarksRef = React.useRef<any[]>([])
   const pdfDocumentRef = React.useRef<any>(null)
@@ -98,6 +305,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   const preservedScrollRef = React.useRef<{ pageNumber: number; offsetRatio: number } | null>(null)
   const scrollRafRef = React.useRef<number | null>(null)
   const pageJumpInputRef = React.useRef<HTMLInputElement | null>(null)
+  const searchDebounceRef = React.useRef<NodeJS.Timeout | null>(null)
 
   const getInlinePlaceholder = () => {
     switch (inlineAnnotationType) {
@@ -182,7 +390,7 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   }, [selectedHighlightId])
 
   // Helper function to flatten bookmark tree and get page numbers
-  const flattenBookmarks = async (bookmarks: any[], pdfDoc: any, result: any[] = []): Promise<any[]> => {
+  const flattenBookmarks = async (bookmarks: any[], pdfDoc: any, result: any[] = [], level: number = 0): Promise<any[]> => {
     for (const bookmark of bookmarks) {
       if (bookmark.dest) {
         try {
@@ -191,109 +399,165 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
           if (typeof dest === 'string') {
             dest = await pdfDoc.getDestination(dest)
           }
+
           if (dest && dest[0]) {
             const pageRef = dest[0]
             const pageIndex = await pdfDoc.getPageIndex(pageRef)
             let yNormalizedFromTop: number | null = null
 
-            // dest array format: [pageRef, 'XYZ', left, top, zoom]
-            if (Array.isArray(dest) && typeof dest[3] === 'number') {
-              try {
-                const page = await pdfDoc.getPage(pageIndex + 1)
-                const viewport = page.getViewport({ scale: 1 })
-                const topFromBottom = dest[3]
-                // PDF coords origin is bottom-left; convert to top-origin normalized 0-1
-                yNormalizedFromTop = 1 - Math.min(Math.max(topFromBottom / Math.max(viewport.height, 1), 0), 1)
-              } catch (e) {
-                console.warn('Error normalizing bookmark position:', e)
+            // dest array format varies by type:
+            // [pageRef, 'XYZ', left, top, zoom] - top is dest[3]
+            // [pageRef, 'FitH', top] - top is dest[2]
+            // [pageRef, 'FitBH', top] - top is dest[2]
+            // [pageRef, 'FitR', left, bottom, right, top] - top is dest[5]
+            // [pageRef, 'Fit'] - no position, just fits the page
+            // [pageRef, 'FitV', left] - no top position
+            // [pageRef, 'FitB'] - no position
+            if (Array.isArray(dest) && dest.length >= 2) {
+              const destType = dest[1]?.name || dest[1]
+              let topFromBottom: number | null = null
+
+              if (destType === 'XYZ' && typeof dest[3] === 'number') {
+                topFromBottom = dest[3]
+              } else if ((destType === 'FitH' || destType === 'FitBH') && typeof dest[2] === 'number') {
+                topFromBottom = dest[2]
+              } else if (destType === 'FitR' && typeof dest[5] === 'number') {
+                topFromBottom = dest[5]
               }
+
+              if (topFromBottom !== null) {
+                try {
+                  const page = await pdfDoc.getPage(pageIndex + 1)
+                  const viewport = page.getViewport({ scale: 1 })
+                  // PDF coords origin is bottom-left; convert to top-origin normalized 0-1
+                  yNormalizedFromTop = 1 - Math.min(Math.max(topFromBottom / Math.max(viewport.height, 1), 0), 1)
+                } catch (e) {
+                  console.warn('Error normalizing bookmark position:', e)
+                }
+              }
+              // For Fit destinations, yNormalizedFromTop stays null - we'll find it from text layer
             }
 
             result.push({
               title: bookmark.title,
               pageNumber: pageIndex + 1, // Convert 0-indexed to 1-indexed
               yNormalizedFromTop,
+              level, // Track nesting depth for hierarchy display
             })
           }
         } catch (e) {
           console.warn('Error processing bookmark:', e)
         }
       }
-      // Recursively process child bookmarks
+      // Recursively process child bookmarks with incremented level
       if (bookmark.items && bookmark.items.length > 0) {
-        await flattenBookmarks(bookmark.items, pdfDoc, result)
+        await flattenBookmarks(bookmark.items, pdfDoc, result, level + 1)
       }
     }
     return result
   }
 
-  // Helper function to find nearest bookmark for a given page
-  const findNearestBookmark = (pageNum: number, selectionYNormalized?: number): string => {
-    if (pdfBookmarksRef.current.length === 0) return ''
+  // Get bookmarks for a specific page (in document order)
+  const getBookmarksForPage = (pageNum: number): any[] => {
+    return pdfBookmarksRef.current.filter(b => b.pageNumber === pageNum)
+  }
 
-    // Sort by page, then Y (top to bottom)
-    const bookmarks = [...pdfBookmarksRef.current].sort((a, b) => {
-      if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber
-      const ay = typeof a.yNormalizedFromTop === 'number' ? a.yNormalizedFromTop : 0
-      const by = typeof b.yNormalizedFromTop === 'number' ? b.yNormalizedFromTop : 0
-      return ay - by
-    })
+  // Get bookmark options for the dropdown: all bookmarks on current page + last bookmark from previous page
+  const getBookmarkOptions = (pageNum: number): any[] => {
+    const currentPageBookmarks = getBookmarksForPage(pageNum)
 
-    // Filter to bookmarks strictly above the selection (or any on prior pages)
-    const candidates = bookmarks.filter((bm) => {
-      if (bm.pageNumber < pageNum) return true
-      if (bm.pageNumber > pageNum) return false
-      // If we lack Y info for either the bookmark or the selection, avoid guessing on the same page.
-      if (typeof bm.yNormalizedFromTop !== 'number' || typeof selectionYNormalized !== 'number') {
-        return false
-      }
-      return bm.yNormalizedFromTop <= selectionYNormalized
-    })
+    // Find the last bookmark from previous pages (furthest down on the most recent page)
+    // Bookmarks are stored in document order, so the last one before current page is what we want
+    const previousPageBookmarks = pdfBookmarksRef.current
+      .filter(b => b.pageNumber < pageNum)
 
-    if (candidates.length === 0) {
+    const lastPreviousBookmark = previousPageBookmarks.length > 0 ? previousPageBookmarks[previousPageBookmarks.length - 1] : null
+
+    const options: any[] = []
+    if (lastPreviousBookmark) {
+      options.push({ ...lastPreviousBookmark, isPrevious: true })
+    }
+    options.push(...currentPageBookmarks.map(b => ({ ...b, isPrevious: false })))
+
+    return options
+  }
+
+  // Guess the nearest bookmark ABOVE the selection based on Y position
+  // Since bookmarks don't have Y coordinates, we use a simple heuristic:
+  // Divide the page into equal sections based on number of bookmarks
+  // Y from top: 0 = top of page, 1 = bottom of page
+  const guessNearestBookmark = (pageNum: number, selectionYNormalized?: number): string => {
+    console.log('=== BOOKMARK GUESSING DEBUG ===')
+    console.log('Total bookmarks in document:', pdfBookmarksRef.current.length)
+
+    if (pdfBookmarksRef.current.length === 0) {
+      console.log('No bookmarks in document, returning empty')
       return ''
     }
 
-    // Pick the last candidate (closest from above)
-    return candidates[candidates.length - 1]?.title || ''
+    const currentPageBookmarks = getBookmarksForPage(pageNum)
+
+    // Get the last bookmark from previous pages as a fallback
+    // We want the bookmark furthest down on the most recent previous page
+    const previousBookmarks = pdfBookmarksRef.current
+      .filter(b => b.pageNumber < pageNum)
+    // The bookmarks are in document order, so the last one in the filtered array
+    // is the one furthest down on the highest page number before current
+    const lastPreviousBookmark = previousBookmarks.length > 0 ? previousBookmarks[previousBookmarks.length - 1] : null
+
+    // 1. All bookmarks on current page, listed in order
+    console.log(`1. Bookmarks on page ${pageNum} (in order):`)
+    currentPageBookmarks.forEach((b, i) => console.log(`   ${i + 1}. "${b.title}"`))
+
+    // 2. Number of bookmarks
+    const numBookmarks = currentPageBookmarks.length
+    console.log(`2. Number of bookmarks on page: ${numBookmarks}`)
+
+    // 3. Fraction of page for each bookmark
+    console.log('3. Page fractions for each bookmark:')
+    if (numBookmarks > 0) {
+      currentPageBookmarks.forEach((b, i) => {
+        const startFraction = i / numBookmarks
+        const endFraction = (i + 1) / numBookmarks
+        console.log(`   "${b.title}": ${startFraction.toFixed(2)} - ${endFraction.toFixed(2)}`)
+      })
+    }
+
+    // 4. Position of current selection
+    console.log(`4. Selection position (0=top, 1=bottom): ${selectionYNormalized?.toFixed(4) ?? 'undefined'}`)
+
+    // 5. Last bookmark from previous page
+    console.log(`5. Last bookmark from previous page: ${lastPreviousBookmark ? `"${lastPreviousBookmark.title}" (page ${lastPreviousBookmark.pageNumber})` : 'none'}`)
+
+    // If no bookmarks on current page, use the last bookmark from a previous page
+    if (numBookmarks === 0) {
+      const result = lastPreviousBookmark?.title || ''
+      console.log(`6. GUESS: "${result}" - No bookmarks on current page, using last from previous page`)
+      return result
+    }
+
+    // If we don't have Y position, return the first bookmark on the page
+    if (typeof selectionYNormalized !== 'number') {
+      const result = currentPageBookmarks[0]?.title || ''
+      console.log(`6. GUESS: "${result}" - No Y position available, using first bookmark on page`)
+      return result
+    }
+
+    // Simple approach: divide page into equal sections
+    // If 4 bookmarks: section 0 = 0-0.25, section 1 = 0.25-0.5, section 2 = 0.5-0.75, section 3 = 0.75-1.0
+    const sectionIndex = Math.min(
+      Math.floor(selectionYNormalized * numBookmarks),
+      numBookmarks - 1
+    )
+
+    const result = currentPageBookmarks[sectionIndex]?.title || ''
+    const startFraction = sectionIndex / numBookmarks
+    const endFraction = (sectionIndex + 1) / numBookmarks
+    console.log(`6. GUESS: "${result}" - Selection Y=${selectionYNormalized.toFixed(4)} falls in section ${sectionIndex} (range ${startFraction.toFixed(2)}-${endFraction.toFixed(2)})`)
+    console.log('=== END DEBUG ===')
+
+    return result
   }
-
-  // Fallback: use nearest bold text on the page when no bookmark is available
-  const findNearestBoldHeading = (pageNum: number, selectionYNormalized?: number): string => {
-    const pageElement = document.querySelector(`[data-page-number="${pageNum}"]`) as HTMLElement | null
-    if (!pageElement) return ''
-
-    const textLayer = pageElement.querySelector('.textLayer') as HTMLElement | null
-    if (!textLayer) return ''
-
-    const pageRect = pageElement.getBoundingClientRect()
-    const targetY = typeof selectionYNormalized === 'number'
-      ? selectionYNormalized * Math.max(pageRect.height, 1)
-      : Number.POSITIVE_INFINITY
-
-    let fallback = ''
-    let fallbackY = -Infinity
-
-    Array.from(textLayer.querySelectorAll('span')).forEach((span) => {
-      const style = window.getComputedStyle(span)
-      const weight = parseInt(style.fontWeight, 10)
-      const isBold = style.fontWeight === 'bold' || (Number.isFinite(weight) && weight >= 600)
-      if (!isBold) return
-
-      const text = span.textContent?.trim() || ''
-      if (!text) return
-
-      const rect = span.getBoundingClientRect()
-      const spanY = rect.top - pageRect.top
-      if (spanY <= targetY && spanY > fallbackY) {
-        fallback = text
-        fallbackY = spanY
-      }
-    })
-
-    return fallback
-  }
-
 
   const resetHash = () => {
     // Don't reset hash anymore - we want highlights to persist
@@ -493,11 +757,10 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
   }
 
   // Get the scale value to pass to PdfHighlighter
-  const getScaleValue = () => {
-    const value = scaleMode === 'page-fit' ? 'page-fit'
-                : scaleMode === 'page-width' ? 'page-width'
-                : (scale / 100).toString()
-    return value
+  const getScaleValue = (): "page-fit" | "page-width" | number => {
+    if (scaleMode === 'page-fit') return 'page-fit'
+    if (scaleMode === 'page-width') return 'page-width'
+    return scale / 100  // Return as number, not string
   }
 
   React.useEffect(() => {
@@ -541,9 +804,16 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       // Clear search when closing
       setSearchQuery('')
       setSearchMatches([])
+      setSearchRanges([])
       setCurrentMatch(0)
 
-      // Remove highlights
+      // Clear CSS custom highlights
+      if ('highlights' in CSS) {
+        (CSS as any).highlights.delete('pdf-search-results')
+        ;(CSS as any).highlights.delete('pdf-search-current')
+      }
+
+      // Remove fallback class-based highlights
       document.querySelectorAll('.pdf-search-highlight-element').forEach(el => {
         el.classList.remove('pdf-search-highlight-element')
       })
@@ -553,10 +823,15 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     }
   }
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query)
+  // Perform the actual search (called after debounce)
+  const performSearch = useCallback((query: string) => {
+    // Clear CSS custom highlights
+    if ('highlights' in CSS) {
+      (CSS as any).highlights.delete('pdf-search-results')
+      ;(CSS as any).highlights.delete('pdf-search-current')
+    }
 
-    // Remove previous highlights
+    // Remove previous class-based highlights (fallback)
     document.querySelectorAll('.pdf-search-highlight-element').forEach(el => {
       el.classList.remove('pdf-search-highlight-element')
     })
@@ -565,14 +840,12 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     })
 
     if (query.trim()) {
-      // Find and highlight matches in the text content
-      // Only look at visible text layers (filter out hidden duplicates)
       const textLayers = document.querySelectorAll('.textLayer')
       const matches: Element[] = []
+      const matchRanges: Range[] = []
       const seenPositions = new Set<string>()
 
       textLayers.forEach(layer => {
-        // Skip if the layer is hidden or has no dimensions
         const layerRect = layer.getBoundingClientRect()
         if (layerRect.width === 0 || layerRect.height === 0) return
 
@@ -584,50 +857,95 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
           const lowerText = text.toLowerCase()
           const lowerQuery = query.toLowerCase()
+          const matchIndex = lowerText.indexOf(lowerQuery)
 
-          if (lowerText.includes(lowerQuery)) {
-            // Create a unique key based on position and text to avoid duplicates
+          if (matchIndex !== -1) {
             const rect = el.getBoundingClientRect()
-
-            // Skip elements with no dimensions (hidden)
             if (rect.width === 0 || rect.height === 0) return
 
-            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${text}`
+            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${matchIndex}`
 
-            // Only add if we haven't seen this position before
             if (!seenPositions.has(positionKey)) {
               seenPositions.add(positionKey)
-              el.classList.add('pdf-search-highlight-element')
               matches.push(el)
+
+              // Create a Range for just the matching text (for CSS Highlight API)
+              if ('highlights' in CSS && el.firstChild) {
+                try {
+                  const range = new Range()
+                  range.setStart(el.firstChild, matchIndex)
+                  range.setEnd(el.firstChild, matchIndex + query.length)
+                  matchRanges.push(range)
+                } catch (e) {
+                  // Fallback to class-based highlight if range fails
+                  el.classList.add('pdf-search-highlight-element')
+                }
+              } else {
+                // Fallback for browsers without CSS Highlight API
+                el.classList.add('pdf-search-highlight-element')
+              }
             }
           }
         })
       })
 
+      // Register highlights with CSS Highlight API
+      if ('highlights' in CSS && matchRanges.length > 0) {
+        const searchHighlight = new (window as any).Highlight(...matchRanges)
+        ;(CSS as any).highlights.set('pdf-search-results', searchHighlight)
+      }
+
       setSearchMatches(matches)
+      setSearchRanges(matchRanges)
       if (matches.length > 0) {
         setCurrentMatch(1)
-        // Highlight first match differently with thicker underline
-        matches[0].classList.add('pdf-search-highlight-current-element')
+        // Highlight first match as current
+        if ('highlights' in CSS && matchRanges.length > 0) {
+          const currentHighlight = new (window as any).Highlight(matchRanges[0])
+          ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
+        } else {
+          matches[0].classList.add('pdf-search-highlight-current-element')
+        }
       } else {
         setCurrentMatch(0)
       }
     } else {
       setSearchMatches([])
+      setSearchRanges([])
       setCurrentMatch(0)
     }
+  }, [])
+
+  const handleSearchChange = (query: string) => {
+    // Update input immediately for responsive typing
+    setSearchQuery(query)
+
+    // Clear any pending search
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current)
+    }
+
+    // Debounce the actual search by 200ms
+    searchDebounceRef.current = setTimeout(() => {
+      performSearch(query)
+    }, 200)
   }
 
   const handleNextMatch = () => {
     if (currentMatch < searchMatches.length && searchMatches.length > 0) {
-      // Remove current highlight (thicker underline)
-      searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
-
       const nextIndex = currentMatch
-      setCurrentMatch(nextIndex + 1)
 
-      // Add current highlight to next match (thicker underline)
-      searchMatches[nextIndex].classList.add('pdf-search-highlight-current-element')
+      // Update CSS Highlight API current highlight
+      if ('highlights' in CSS && searchRanges.length > nextIndex) {
+        const currentHighlight = new (window as any).Highlight(searchRanges[nextIndex])
+        ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
+      } else {
+        // Fallback: class-based highlighting
+        searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
+        searchMatches[nextIndex].classList.add('pdf-search-highlight-current-element')
+      }
+
+      setCurrentMatch(nextIndex + 1)
 
       // Scroll to match
       searchMatches[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -636,14 +954,19 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
 
   const handlePreviousMatch = () => {
     if (currentMatch > 1 && searchMatches.length > 0) {
-      // Remove current highlight (thicker underline)
-      searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
-
       const prevIndex = currentMatch - 2
-      setCurrentMatch(prevIndex + 1)
 
-      // Add current highlight to previous match (thicker underline)
-      searchMatches[prevIndex].classList.add('pdf-search-highlight-current-element')
+      // Update CSS Highlight API current highlight
+      if ('highlights' in CSS && searchRanges.length > prevIndex) {
+        const currentHighlight = new (window as any).Highlight(searchRanges[prevIndex])
+        ;(CSS as any).highlights.set('pdf-search-current', currentHighlight)
+      } else {
+        // Fallback: class-based highlighting
+        searchMatches[currentMatch - 1].classList.remove('pdf-search-highlight-current-element')
+        searchMatches[prevIndex].classList.add('pdf-search-highlight-current-element')
+      }
+
+      setCurrentMatch(prevIndex + 1)
 
       // Scroll to match
       searchMatches[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -737,7 +1060,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       setSelectedHighlight(null)
       setDraftHighlight(null)
       setInlineAnnotationText('')
-      setShowInlineDetails(false)
       setInlineAnnotationType('comment')
       setButtonPosition(null)
       setSectionNumber('')
@@ -762,36 +1084,66 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       id: tempId,
     } as IHighlight)
 
-    const pdfPageNumber = highlight.position.pageNumber || 1
+    const pdfPageNumber = (highlight.position as any).pageNumber || highlight.position.boundingRect?.pageNumber || 1
     setPageNumber(pdfPageNumber)
 
-    const selection = window.getSelection()
-    let selectionRect: DOMRect | null = null
-
     // Find nearest bookmark for this page using selection Y position
-    // Determine selection position as normalized Y within the page (top-origin)
+    // The boundingRect.y1 is in PDF coordinate units (not normalized)
+    // We need to get the page height to normalize it
     let selectionYNormalized: number | undefined = undefined
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0)
-      selectionRect = range.getBoundingClientRect()
-      try {
-        const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
-        if (pageElement) {
+    const boundingRect = highlight.position.boundingRect
+
+    if (boundingRect && typeof boundingRect.y1 === 'number') {
+      // Get the page element to find its height
+      const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
+
+      if (pageElement) {
+        const pageHeight = pageElement.clientHeight || pageElement.offsetHeight
+
+        // boundingRect.y1 appears to be negative (PDF coords from bottom)
+        // Convert to 0-1 where 0 = top, 1 = bottom
+        // If y1 is negative (e.g., -250), and page height is ~1017
+        // Then position from top = pageHeight + y1 = 1017 + (-250) = 767 from top
+        // Normalized = 767 / 1017 = 0.75 (75% down the page)
+
+        // Actually, let's check what the raw values are first
+        console.log('Raw boundingRect:', boundingRect)
+        console.log('Page element height:', pageHeight)
+
+        // The y1 value seems to be in a different coordinate system
+        // Let's try to figure out the actual position from the DOM selection
+        const selection = window.getSelection()
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0)
+          const selectionRect = range.getBoundingClientRect()
           const pageRect = pageElement.getBoundingClientRect()
-          const offsetY = selectionRect.top - pageRect.top
-          selectionYNormalized = Math.min(Math.max(offsetY / Math.max(pageRect.height, 1), 0), 1)
+
+          // Calculate Y position relative to page (0 = top, 1 = bottom)
+          const relativeY = selectionRect.top - pageRect.top
+          selectionYNormalized = relativeY / pageRect.height
+
+          console.log('Selection rect top:', selectionRect.top)
+          console.log('Page rect top:', pageRect.top)
+          console.log('Page rect height:', pageRect.height)
+          console.log('Relative Y:', relativeY)
+          console.log('Normalized Y (0=top, 1=bottom):', selectionYNormalized)
         }
-      } catch (e) {
-        console.warn('Could not compute selection Y position:', e)
       }
     }
 
-    const nearestBookmark = findNearestBookmark(pdfPageNumber, selectionYNormalized)
-    const nearestHeading = nearestBookmark || findNearestBoldHeading(pdfPageNumber, selectionYNormalized)
-    setSectionNumber(nearestHeading)
-    console.log('Nearest bookmark for page', pdfPageNumber, ':', nearestBookmark, 'Fallback heading:', nearestHeading)
+    // Guess the nearest bookmark based on Y position and heading distribution on the page
+    const guessedBookmark = guessNearestBookmark(pdfPageNumber, selectionYNormalized)
+    setSectionNumber(guessedBookmark)
 
-    // Calculate button position based on selection
+    // Calculate button position based on selection from DOM or highlight position
+    const selection = window.getSelection()
+    let selectionRect: DOMRect | null = null
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0)
+      selectionRect = range.getBoundingClientRect()
+    }
+
+    // Calculate button position based on selection or highlight position
     if (selectionRect) {
       const rect = selectionRect
       const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
@@ -808,6 +1160,30 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         x: rect.left + rect.width / 2,
         y: placement === 'above' ? rect.top - 8 : rect.bottom + 8
       })
+    } else if (boundingRect) {
+      // Fallback: compute position from highlight's normalized coordinates
+      const pageElement = document.querySelector(`[data-page-number="${pdfPageNumber}"]`) as HTMLElement | null
+      if (pageElement) {
+        const pageRect = pageElement.getBoundingClientRect()
+        // Convert normalized coordinates to viewport coordinates
+        const x = pageRect.left + (boundingRect.x1 + boundingRect.x2) / 2 * pageRect.width
+        const y = pageRect.top + boundingRect.y1 * pageRect.height
+
+        const container = document.querySelector('.PdfHighlighter') as HTMLElement | null
+        const containerRect = container?.getBoundingClientRect()
+        const availableSpaceAbove = containerRect ? y - containerRect.top : y
+        const estimatedPopoverHeight = 180
+        const placement: 'above' | 'below' =
+          availableSpaceAbove >= estimatedPopoverHeight ? 'above' : 'below'
+
+        setInlinePlacement(placement)
+        setButtonPosition({
+          x,
+          y: placement === 'above' ? y - 8 : y + 8
+        })
+      } else {
+        setButtonPosition(null)
+      }
     } else {
       setButtonPosition(null)
     }
@@ -863,195 +1239,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
     setDraftHighlight(null)
     setShowAddButton(false)
     setInlineAnnotationText('')
-    setShowInlineDetails(false)
     setButtonPosition(null)
     setSectionNumber('')
     setDocumentPageNumber(data.pageNumber.toString())
     setDrawerOpen(false)
   }
 
-  // Helper functions for popup styling
-  const getTypeIcon = (type: string) => {
-    switch (type?.toLowerCase?.()) {
-      case 'edit':
-        return Pencil
-      case 'discussion':
-        return UsersRound
-      default:
-        return MessageSquare
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'proposed':
-        return {
-          badge: 'bg-yellow-500/10 text-yellow-700 border-yellow-500/20',
-          icon: 'text-yellow-700',
-          bg: 'bg-yellow-500/10'
-        }
-      case 'accepted':
-        return {
-          badge: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20',
-          icon: 'text-emerald-700',
-          bg: 'bg-emerald-500/10'
-        }
-      case 'rejected':
-        return {
-          badge: 'bg-red-500/10 text-red-700 border-red-500/20',
-          icon: 'text-red-700',
-          bg: 'bg-red-500/10'
-        }
-      default:
-        return {
-          badge: 'bg-muted text-muted-foreground',
-          icon: 'text-muted-foreground',
-          bg: 'bg-muted'
-        }
-    }
-  }
-
-  const formatStatus = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
-  }
-
-  const highlightTransform = (
-    highlight: IHighlight,
-    index: number,
-    setTip: (highlight: IHighlight, callback: (highlight: IHighlight) => React.ReactElement) => void,
-    hideTip: () => void,
-    viewportToScaled: (rect: { x: number; y: number }) => { x: number; y: number },
-    screenshot: (position: ScaledPosition) => string,
-    isScrolledTo: boolean
-  ) => {
-    // Override isScrolledTo based on our selectedHighlightId
-    const isSelected = selectedHighlightId === highlight.id
-
-    // Get comment metadata
-    const commentType = (highlight.comment as any)?.type || 'comment'
-    const commentStatus = (highlight.comment as any)?.status || 'proposed'
-    const TypeIcon = getTypeIcon(commentType)
-    const statusColors = getStatusColor(commentStatus)
-    const formattedId =
-      (highlight.comment as any)?.annotation_id ||
-      formatAnnotationId({
-        id: highlight.id || "",
-        annotation_id: (highlight.comment as any)?.annotation_id,
-      } as any)
-
-    const component = highlight.comment?.text ? (
-      <Highlight
-        isScrolledTo={isSelected || isScrolledTo}
-        position={highlight.position as any}
-        comment={highlight.comment}
-        onClick={() => {
-          if (onHighlightClick && highlight.id) {
-            onHighlightClick(highlight.id)
-          }
-        }}
-      />
-    ) : (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          if (onHighlightClick && highlight.id) {
-            onHighlightClick(highlight.id)
-          }
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault()
-            if (onHighlightClick && highlight.id) {
-              onHighlightClick(highlight.id)
-            }
-          }
-        }}
-      >
-        <AreaHighlight
-          isScrolledTo={isSelected || isScrolledTo}
-          highlight={highlight as any}
-          onChange={() => {}}
-        />
-      </div>
-    )
-
-    const highlightWrapper = (
-      <HighlightWrapper
-        key={highlight.id || index}
-        data-highlight-id={highlight.id}
-        className={isSelected ? 'custom-highlight-selected' : ''}
-      >
-        {component}
-      </HighlightWrapper>
-    )
-
-    // Skip preview popup for in-progress highlights (no comment text yet)
-    if (!highlight.comment?.text?.trim()) {
-      return highlightWrapper
-    }
-
-    return (
-      <Popup
-        key={`popup-${highlight.id || index}`}
-        popupContent={
-          <PopupContentWrapper
-            className="bg-card border border-border rounded-lg p-3 shadow-xl text-sm max-w-sm cursor-pointer"
-            onClick={() => {
-              if (onHighlightClick && highlight.id) {
-                onHighlightClick(highlight.id)
-              }
-            }}
-          >
-            {/* Top line - Type icon, ID, and Status badge */}
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="flex items-center gap-2">
-                {/* Type Icon */}
-                <div className={`w-6 h-6 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
-                  <TypeIcon className={`w-3.5 h-3.5 ${statusColors.icon}`} />
-                </div>
-                {/* Annotation ID */}
-                <div className="font-semibold text-sm">
-                  {formattedId}
-                </div>
-              </div>
-              {/* Status Badge */}
-              <Badge variant="secondary" className={`${statusColors.badge} border-0 flex items-center gap-1 text-xs px-2 py-0.5 flex-shrink-0`}>
-                {commentStatus.toLowerCase() === 'proposed' && (
-                  <CircleHelp className="w-3 h-3" />
-                )}
-                {commentStatus.toLowerCase() === 'accepted' && (
-                  <CircleCheck className="w-3 h-3" />
-                )}
-                {commentStatus.toLowerCase() === 'rejected' && (
-                  <CircleX className="w-3 h-3" />
-                )}
-                {formatStatus(commentStatus)}
-              </Badge>
-            </div>
-
-            {/* Annotation text */}
-            <div className="text-foreground leading-relaxed mb-2">
-              {highlight.comment?.text}
-            </div>
-
-            {/* Separator */}
-            <div className="border-t border-border my-2"></div>
-
-            {/* User info - right aligned */}
-            <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-              <CircleUserRound className="w-3.5 h-3.5" />
-              <span>{(highlight.comment as any)?.user_name || 'Unknown User'}</span>
-            </div>
-          </PopupContentWrapper>
-        }
-        onMouseOver={(popupContent) => setTip(highlight, () => popupContent)}
-        onMouseOut={hideTip}
-      >
-        {highlightWrapper}
-      </Popup>
-    )
-  }
+  // Store PDF highlighter utils ref for scrolling
+  const pdfHighlighterUtilsRef = React.useRef<PdfHighlighterUtils | null>(null)
 
   return (
     <>
@@ -1059,13 +1254,14 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
         {/* PDF Viewer - takes remaining space */}
         <div className="flex-1 relative overflow-hidden min-h-0">
           <PdfLoader
-            url={pdfUrl}
-            beforeLoad={<div className="p-8 text-center">Loading PDF...</div>}
-            errorMessage={
+            document={pdfUrl}
+            workerSrc="//unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs"
+            beforeLoad={() => <div className="p-8 text-center">Loading PDF...</div>}
+            errorMessage={() => (
               <div className="p-8 text-center text-destructive">
                 Failed to load PDF. Please check the URL.
               </div>
-            }
+            )}
           >
             {(pdfDocument) => {
               // Store PDF document reference for bookmark extraction
@@ -1081,55 +1277,57 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                   }, 0)
                 }
 
-                // Extract bookmarks asynchronously (doesn't trigger re-render)
+                // Extract bookmarks asynchronously
                 pdfDocument.getOutline().then(async (outline: any) => {
                   if (outline) {
                     const flattened = await flattenBookmarks(outline, pdfDocument)
                     flattened.sort((a, b) => a.pageNumber - b.pageNumber)
                     pdfBookmarksRef.current = flattened
-                    console.log('Extracted bookmarks:', flattened)
+                    setBookmarks(flattened)
                   }
-                }).catch((error: any) => {
-                  console.warn('Error extracting bookmarks:', error)
+                }).catch(() => {
+                  // Silently handle bookmark extraction errors
                 })
               }
+
+              // Migrate highlights to new format and combine with draft
+              const migratedHighlights = migrateHighlights(
+                draftHighlight ? [...highlights, draftHighlight] : highlights
+              )
 
               return (
                 <div className="absolute inset-0">
                   <PdfHighlighter
-                  key={`${scaleMode}-${scale}`}
-                  pdfDocument={pdfDocument}
-                  pdfScaleValue={getScaleValue()}
-                  enableAreaSelection={(event) => event.altKey}
-                  onScrollChange={() => {
-                    resetHash()
-                    updateCurrentPage()
-                  }}
-                  scrollRef={(scrollTo) => {
-                    scrollToHighlightRef.current = scrollTo
-                  }}
-                onSelectionFinished={(
-                  position,
-                  content,
-                  hideTipAndSelection,
-                ) => {
-                  console.log('Selection finished:', { position, content })
+                    key={`${scaleMode}-${scale}`}
+                    pdfDocument={pdfDocument}
+                    pdfScaleValue={getScaleValue()}
+                    enableAreaSelection={(event) => event.altKey}
+                    onSelection={(selection: PdfSelection) => {
+                      console.log('Selection finished:', selection)
 
-                  const newHighlight: NewHighlight = {
-                    content,
-                    position,
-                    comment: { text: '', emoji: '' },
-                  }
+                      const newHighlight: NewHighlight = {
+                        content: selection.content,
+                        position: selection.position,
+                        type: selection.type,
+                        comment: { text: '', emoji: '' },
+                      }
 
-                  handleSelectionComplete(newHighlight)
-                  // Clear the library's internal selection (we have our own draft highlight now)
-                  hideTipAndSelection()
-
-                  return <div />
-                }}
-                highlightTransform={highlightTransform as any}
-                highlights={draftHighlight ? [...highlights, draftHighlight] : highlights}
-              />
+                      handleSelectionComplete(newHighlight)
+                    }}
+                    utilsRef={(utils) => {
+                      pdfHighlighterUtilsRef.current = utils
+                      // Create a wrapper that matches the old scrollRef signature
+                      scrollToHighlightRef.current = (highlight: IHighlight) => {
+                        utils.scrollToHighlight(highlight)
+                      }
+                    }}
+                    highlights={migratedHighlights as Highlight[]}
+                  >
+                    <HighlightContainer
+                      selectedHighlightId={selectedHighlightId}
+                      onHighlightClick={onHighlightClick}
+                    />
+                  </PdfHighlighter>
                 </div>
               )
             }}
@@ -1152,17 +1350,83 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
             <div className="bg-card border border-border rounded-lg shadow-2xl p-3 w-[368px]">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 w-full">
-                  <Badge variant="outline" className="text-xs">
-                    Page {documentPageNumber || pageNumber}
-                  </Badge>
-                  {sectionNumber && (
-                    <Badge
-                      variant="secondary"
-                      className="text-xs flex-1 max-w-full truncate text-left justify-start"
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button">
+                        <Badge variant="outline" className="text-xs cursor-pointer hover:bg-accent">
+                          Page {documentPageNumber || pageNumber}
+                        </Badge>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="bottom"
+                      align="start"
+                      className="w-36 p-2 z-[10000]"
+                      sideOffset={5}
                     >
-                      {sectionNumber}
-                    </Badge>
-                  )}
+                      <label className="text-xs text-muted-foreground block mb-1">Page number</label>
+                      <Input
+                        type="text"
+                        placeholder="Page"
+                        value={documentPageNumber}
+                        onChange={(e) => setDocumentPageNumber(e.target.value)}
+                        className="h-8 text-sm"
+                        autoFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex-1 max-w-full"
+                      >
+                        <Badge
+                          variant="secondary"
+                          className="text-xs w-full truncate text-left justify-start cursor-pointer hover:bg-secondary/80"
+                        >
+                          {sectionNumber || 'Select section...'}
+                        </Badge>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="bottom"
+                      align="start"
+                      className="w-72 p-0 z-[10000]"
+                      sideOffset={5}
+                    >
+                      <div className="p-2 border-b">
+                        <Input
+                          placeholder="Type or select section..."
+                          value={sectionNumber}
+                          onChange={(e) => setSectionNumber(e.target.value)}
+                          className="h-8 text-sm"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto py-1">
+                        {getBookmarkOptions(pageNumber).length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-muted-foreground">No bookmarks available</p>
+                        ) : (
+                          getBookmarkOptions(pageNumber).map((bookmark, index) => (
+                            <button
+                              key={index}
+                              type="button"
+                              className={`w-full px-3 py-2 text-left text-sm hover:bg-accent transition-colors ${
+                                bookmark.title === sectionNumber ? 'bg-accent font-medium' : ''
+                              } ${bookmark.isPrevious ? 'border-b border-border' : ''}`}
+                              onClick={() => setSectionNumber(bookmark.title)}
+                            >
+                              <span className="truncate block">{bookmark.title}</span>
+                              {bookmark.isPrevious && (
+                                <span className="text-xs text-muted-foreground block">p. {bookmark.pageNumber} (previous page)</span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
@@ -1214,7 +1478,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     setSelectedHighlight(null)
                     setDraftHighlight(null)
                     setInlineAnnotationText('')
-                    setShowInlineDetails(false)
                     setButtonPosition(null)
                     setSectionNumber('')
                     setDocumentPageNumber('')
@@ -1227,32 +1490,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                 }}
               />
 
-              {/* Details Section (expandable) */}
-              {showInlineDetails && (
-                <div className="mb-2 pb-2 border-b space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-muted-foreground">Section</label>
-                      <Input
-                        className="h-7 text-xs"
-                        placeholder="e.g., 3.2.1"
-                        value={sectionNumber}
-                        onChange={(e) => setSectionNumber(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">Page</label>
-                      <Input
-                        className="h-7 text-xs"
-                        placeholder="Page"
-                        value={documentPageNumber}
-                        onChange={(e) => setDocumentPageNumber(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Action Buttons */}
               <div className="flex gap-2">
                 <Button
@@ -1264,7 +1501,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     setSelectedHighlight(null)
                     setDraftHighlight(null)
                     setInlineAnnotationText('')
-                    setShowInlineDetails(false)
                     setButtonPosition(null)
                     setSectionNumber('')
                     setDocumentPageNumber('')
@@ -1274,15 +1510,6 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                 >
                   <Ban className="w-3 h-3 mr-1" />
                   Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 text-xs"
-                  onClick={() => setShowInlineDetails(!showInlineDetails)}
-                >
-                  <UnfoldVertical className="w-3 h-3 mr-1" />
-                  Details
                 </Button>
                 <Button
                   size="sm"
@@ -1552,6 +1779,59 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
                     <p>Fit Width</p>
                   </TooltipContent>
                 </Tooltip>
+
+                {/* Divider */}
+                <div className="h-6 w-px bg-border"></div>
+
+                {/* Bookmarks Button */}
+                <Popover open={bookmarksOpen} onOpenChange={setBookmarksOpen}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-6 w-6 ${bookmarksOpen ? 'bg-accent' : ''}`}
+                          disabled={bookmarks.length === 0}
+                        >
+                          <Bookmark className="w-3 h-3" />
+                        </Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p>Bookmarks</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    className="w-90 max-h-80 overflow-y-auto p-0"
+                  >
+                    <div className="p-2 border-b">
+                      <h4 className="font-medium text-sm">Bookmarks</h4>
+                    </div>
+                    <div className="py-1">
+                      {bookmarks.length === 0 ? (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">No bookmarks found</p>
+                      ) : (
+                        bookmarks.map((bookmark, index) => (
+                          <button
+                            key={index}
+                            className="w-full py-2 pr-3 text-left text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2"
+                            style={{ paddingLeft: `${12 + (bookmark.level || 0) * 12}px` }}
+                            onClick={() => {
+                              scrollToPage(bookmark.pageNumber)
+                              setBookmarksOpen(false)
+                            }}
+                          >
+                            <span className="truncate">{bookmark.title}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">p. {bookmark.pageNumber}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </TooltipProvider>

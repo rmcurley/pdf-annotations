@@ -177,7 +177,22 @@
   background-color: transparent !important;
 }
 
-/* PDF Search Highlighting - Underline style */
+/* PDF Search Highlighting - CSS Highlight API (modern browsers) */
+::highlight(pdf-search-results) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: #3b82f6;
+  text-decoration-thickness: 2px;
+}
+
+::highlight(pdf-search-current) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: #1d4ed8;
+  text-decoration-thickness: 3px;
+}
+
+/* PDF Search Highlighting - Fallback for older browsers */
 .pdf-search-highlight-element {
   border-bottom: 1px solid #93c5fd !important;
 }
@@ -191,7 +206,33 @@
   background-color: oklch(0.858 0 0) !important; /* zinc-300 */
 }
 
-/* PDF Highlighter Custom Styles */
+/* PDF Viewer Scrollbar - match browser native style */
+.PdfHighlighter {
+  scrollbar-width: auto;
+  scrollbar-color: #8b8b8b #e8e8e8;
+}
+
+.PdfHighlighter::-webkit-scrollbar {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.PdfHighlighter::-webkit-scrollbar-track,
+.PdfHighlighter::-webkit-scrollbar-track-piece {
+  background: #e8e8e8 !important;
+}
+
+.PdfHighlighter::-webkit-scrollbar-thumb {
+  background: #8b8b8b !important;
+  border-radius: 8px !important;
+  border: 3px solid #e8e8e8 !important;
+}
+
+.PdfHighlighter::-webkit-scrollbar-thumb:hover {
+  background: #6b6b6b !important;
+}
+
+/* PDF Highlighter Custom Styles - Old library classes */
 .Highlight__part {
   background-color: rgba(250, 204, 21, 0.25) !important; /* yellow-400 with 25% opacity */
   cursor: pointer;
@@ -220,4 +261,39 @@
 
 .custom-highlight-selected:hover .Highlight__part {
   background-color: rgba(251, 146, 60, 1.0) !important; /* Full opacity orange on hover */
+}
+
+/* PDF Highlighter Custom Styles - New library (react-pdf-highlighter-extended) */
+.TextHighlight__part,
+.AreaHighlight__part {
+  background-color: rgba(250, 204, 21, 0.25) !important; /* yellow-400 with 25% opacity */
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+/* Hover effect for text highlights */
+.TextHighlight:hover .TextHighlight__part {
+  background-color: rgba(250, 204, 21, 0.65) !important;
+}
+
+/* Active/scrolled-to highlight - orange */
+.TextHighlight--scrolledTo .TextHighlight__part,
+.AreaHighlight--scrolledTo .AreaHighlight__part {
+  background-color: rgba(251, 146, 60, 0.9) !important; /* orange-400 with very high opacity */
+}
+
+/* Hover on scrolled-to highlights */
+.TextHighlight--scrolledTo:hover .TextHighlight__part {
+  background-color: rgba(251, 146, 60, 1.0) !important;
+}
+
+/* Custom class for selected highlights */
+.custom-highlight-selected .TextHighlight__part,
+.custom-highlight-selected .AreaHighlight__part {
+  background-color: rgba(251, 146, 60, 0.9) !important; /* orange-400 with very high opacity */
+}
+
+.custom-highlight-selected:hover .TextHighlight__part,
+.custom-highlight-selected:hover .AreaHighlight__part {
+  background-color: rgba(251, 146, 60, 1.0) !important;
 }

@@ -173,7 +173,7 @@ export default function AdminPage() {
         .eq('user_id', userId)
 
       if (error) throw error
-      return (data || []).map(pm => pm.project_id)
+      return (data || []).map((pm: { project_id: string }) => pm.project_id)
     } catch (error) {
       console.error('Error fetching user projects:', error)
       return []

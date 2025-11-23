@@ -67,7 +67,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import type { ScaledPosition } from 'react-pdf-highlighter'
+import type { ScaledPosition } from 'react-pdf-highlighter-extended'
 
 interface Comment {
   id: string

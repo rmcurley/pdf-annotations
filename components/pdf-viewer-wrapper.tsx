@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import type { IHighlight, NewHighlight } from 'react-pdf-highlighter'
+import type { IHighlight, NewHighlight } from '@/lib/highlight-types'
 
 interface PdfViewerProps {
   pdfUrl: string
