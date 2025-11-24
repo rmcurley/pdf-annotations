@@ -442,7 +442,7 @@ const createColumns = (): ColumnDef<DocumentRow>[] => {
       ) : (
         <Button
           variant="link"
-          className="p-0 font-medium"
+          className="p-0 font-medium text-left whitespace-normal h-auto"
           onClick={() => meta.router.push(`/documents/${row.original.id}`)}
         >
           {row.original.name}
@@ -1021,7 +1021,9 @@ export function DocumentsTable({ data, projectId, onAddDocument, onTableView, on
               onDragEnd={handleDragEnd}
               modifiers={[restrictToVerticalAxis]}
             >
-              <Table>
+              <Table style={{ tableLayout: 'fixed', width: '100%' }}>
+                {/* Column widths: Drag(30) | Checkbox(40) | Name(auto) | PageCount(90) | Version(100) | FileSize(80) | Annotations(140) | Reviewers(90) | Actions(50) */}
+                <colgroup><col style={{ width: '30px' }} /><col style={{ width: '40px' }} /><col /><col style={{ width: '90px' }} /><col style={{ width: '100px' }} /><col style={{ width: '80px' }} /><col style={{ width: '140px' }} /><col style={{ width: '90px' }} /><col style={{ width: '50px' }} /></colgroup>
                 <TableHeader className="bg-muted/40">
                   {table.getHeaderGroups().map((headerGroup) => (
                     <TableRow key={headerGroup.id} className="hover:bg-transparent">
