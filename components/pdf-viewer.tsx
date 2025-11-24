@@ -830,39 +830,68 @@ export function PdfViewer({ pdfUrl, highlights, onAddHighlight, scrollToHighligh
       const textLayers = document.querySelectorAll('.textLayer')
       const matches: Element[] = []
       const seenPositions = new Set<string>()
+      const lowerQuery = query.toLowerCase()
 
       textLayers.forEach(layer => {
         const layerRect = layer.getBoundingClientRect()
         if (layerRect.width === 0 || layerRect.height === 0) return
 
-        const textElements = layer.querySelectorAll('span')
+        const textElements = Array.from(layer.querySelectorAll('span'))
+
+        // Build a continuous text string and map positions to elements
+        let fullText = ''
+        const charToElementMap: { element: Element; charIndex: number }[] = []
 
         textElements.forEach(el => {
           const text = el.textContent || ''
-          if (!text) return
+          const startIndex = fullText.length
+          fullText += text
 
-          const lowerText = text.toLowerCase()
-          const lowerQuery = query.toLowerCase()
+          // Map each character to its source element
+          for (let i = 0; i < text.length; i++) {
+            charToElementMap.push({ element: el, charIndex: startIndex + i })
+          }
+        })
 
-          if (lowerText.includes(lowerQuery)) {
+        // Search for query in the continuous text
+        const lowerFullText = fullText.toLowerCase()
+        let searchIndex = 0
+
+        while (searchIndex < lowerFullText.length) {
+          const matchIndex = lowerFullText.indexOf(lowerQuery, searchIndex)
+          if (matchIndex === -1) break
+
+          // Find all elements that contribute to this match
+          const matchEndIndex = matchIndex + lowerQuery.length - 1
+          const elementsInMatch = new Set<Element>()
+
+          for (let i = matchIndex; i <= matchEndIndex && i < charToElementMap.length; i++) {
+            elementsInMatch.add(charToElementMap[i].element)
+          }
+
+          // Add all contributing elements to matches
+          elementsInMatch.forEach(el => {
             const rect = el.getBoundingClientRect()
             if (rect.width === 0 || rect.height === 0) return
 
-            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${text}`
+            const positionKey = `${Math.round(rect.top)}-${Math.round(rect.left)}-${el.textContent}`
 
             if (!seenPositions.has(positionKey)) {
               seenPositions.add(positionKey)
               el.classList.add('pdf-search-highlight-element')
               matches.push(el)
             }
-          }
-        })
+          })
+
+          searchIndex = matchIndex + 1
+        }
       })
 
       setSearchMatches(matches)
       if (matches.length > 0) {
         setCurrentMatch(1)
         matches[0].classList.add('pdf-search-highlight-current-element')
+        matches[0].scrollIntoView({ behavior: 'smooth', block: 'center' })
       } else {
         setCurrentMatch(0)
       }
