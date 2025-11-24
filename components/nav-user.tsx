@@ -34,6 +34,21 @@ import { useAuth } from "@/contexts/auth-context"
 import { AccountModal } from "@/components/account-modal"
 import { AdminModal } from "@/components/admin-modal"
 
+// Utility to generate initials from name
+function getInitials(name: string): string {
+  if (!name || name.trim() === '') return '??'
+
+  const parts = name.trim().split(/\s+/)
+
+  if (parts.length === 1) {
+    // Single word - take first two characters
+    return parts[0].substring(0, 2).toUpperCase()
+  }
+
+  // Multiple words - take first character of first and last word
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 export function NavUser({
   user,
 }: {
@@ -50,6 +65,7 @@ export function NavUser({
   const [signingOut, setSigningOut] = React.useState(false)
 
   const isAdmin = authUser?.profile?.role === 'admin'
+  const initials = getInitials(user.name)
 
   const handleSignOut = async () => {
     setSigningOut(true)
@@ -85,7 +101,7 @@ export function NavUser({
             >
               <Avatar className="h-8 w-8 rounded-full grayscale">
                 <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-full">CN</AvatarFallback>
+                <AvatarFallback className="rounded-full">{initials}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
@@ -106,7 +122,7 @@ export function NavUser({
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-full">
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-full">CN</AvatarFallback>
+                  <AvatarFallback className="rounded-full">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>
