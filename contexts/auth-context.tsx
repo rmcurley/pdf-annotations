@@ -2,9 +2,33 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, useRef } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+
+// Timeout constants
+const PROFILE_FETCH_TIMEOUT = 10000 // 10 seconds for individual profile fetch
+const MAX_LOADING_TIME = 15000 // 15 seconds max before giving up on loading
+
+// Utility to add timeout to promises
+const withTimeout = <T,>(promiseOrThenable: Promise<T> | PromiseLike<T>, ms: number, operationName: string): Promise<T> => {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`${operationName} timed out after ${ms}ms`)), ms)
+  )
+  // Ensure we're working with a proper Promise
+  const promise = Promise.resolve(promiseOrThenable)
+  return Promise.race([promise, timeout])
+}
+
+// Debug logging with timestamps
+const debugLog = (message: string, data?: any) => {
+  const timestamp = new Date().toISOString()
+  if (data) {
+    console.log(`[Auth ${timestamp}] ${message}`, data)
+  } else {
+    console.log(`[Auth ${timestamp}] ${message}`)
+  }
+}
 
 // Extended user type that includes profile data from users table
 export type ExtendedUser = User & {
@@ -33,20 +57,25 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<ExtendedUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const loadingRef = useRef(true) // Ref to track loading state for timeout callback
   const supabase = createClient()
 
   const fetchUserProfile = useCallback(async (authUser: User): Promise<ExtendedUser> => {
     try {
-      console.log('Fetching profile for user:', authUser.id)
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('first_name, last_name, role, avatar_url')
-        .eq('id', authUser.id)
-        .single()
+      debugLog('Fetching profile for user:', authUser.id)
+
+      const { data: profile, error } = await withTimeout(
+        supabase
+          .from('users')
+          .select('first_name, last_name, role, avatar_url')
+          .eq('id', authUser.id)
+          .single(),
+        PROFILE_FETCH_TIMEOUT,
+        'Profile fetch'
+      ) as { data: { first_name: string | null; last_name: string | null; role: string; avatar_url: string | null } | null; error: any }
 
       if (error) {
-        console.error('Error fetching user profile:', {
-          error,
+        debugLog('Error fetching user profile:', {
           message: error.message,
           details: error.details,
           hint: error.hint,
@@ -55,26 +84,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // If user profile doesn't exist, create it from auth metadata
         if (error.code === 'PGRST116') {
-          console.log('User profile not found, creating from auth metadata...')
-          const { data: newProfile, error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: authUser.id,
-              email: authUser.email || '',
-              first_name: authUser.user_metadata?.first_name || '',
-              last_name: authUser.user_metadata?.last_name || '',
-              role: authUser.user_metadata?.role || 'member',
-              avatar_url: authUser.user_metadata?.avatar_url || '',
-            })
-            .select('first_name, last_name, role, avatar_url')
-            .single()
+          debugLog('User profile not found, creating from auth metadata...')
+
+          const { data: newProfile, error: insertError } = await withTimeout(
+            supabase
+              .from('users')
+              .insert({
+                id: authUser.id,
+                email: authUser.email || '',
+                first_name: authUser.user_metadata?.first_name || '',
+                last_name: authUser.user_metadata?.last_name || '',
+                role: authUser.user_metadata?.role || 'member',
+                avatar_url: authUser.user_metadata?.avatar_url || '',
+              })
+              .select('first_name, last_name, role, avatar_url')
+              .single(),
+            PROFILE_FETCH_TIMEOUT,
+            'Profile creation'
+          ) as { data: { first_name: string | null; last_name: string | null; role: string; avatar_url: string | null } | null; error: any }
 
           if (insertError) {
-            console.error('Error creating user profile:', insertError)
+            debugLog('Error creating user profile:', insertError)
             return authUser
           }
 
-          console.log('Profile created successfully:', newProfile)
+          debugLog('Profile created successfully:', newProfile)
           return {
             ...authUser,
             profile: newProfile || undefined,
@@ -84,13 +118,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return authUser
       }
 
-      console.log('Profile fetched successfully:', profile)
+      debugLog('Profile fetched successfully:', profile)
       return {
         ...authUser,
         profile: profile || undefined,
       }
     } catch (error) {
-      console.error('Exception fetching user profile:', error)
+      debugLog('Exception fetching user profile (may be timeout):', error)
+      // Return user without profile - app can still function
       return authUser
     }
   }, [supabase])
@@ -104,42 +139,102 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    let isMounted = true
+    let loadingTimeoutId: NodeJS.Timeout | null = null
+
+    // Safety net: if loading takes too long, force it to complete
+    loadingTimeoutId = setTimeout(() => {
+      if (isMounted && loadingRef.current) {
+        debugLog('MAX_LOADING_TIME exceeded, forcing loading to complete')
+        loadingRef.current = false
+        setLoading(false)
+      }
+    }, MAX_LOADING_TIME)
+
     // Get initial session
-    supabase.auth.getSession()
-      .then(async ({ data: { session } }: { data: { session: Session | null } }) => {
+    const initAuth = async () => {
+      debugLog('Starting auth initialization')
+
+      try {
+        const sessionPromise = supabase.auth.getSession()
+        const { data: { session } } = await withTimeout(
+          sessionPromise,
+          PROFILE_FETCH_TIMEOUT,
+          'getSession'
+        )
+
+        debugLog('Session retrieved:', session ? 'User logged in' : 'No session')
+
+        if (!isMounted) return
+
         if (session?.user) {
           const extendedUser = await fetchUserProfile(session.user)
-          setUser(extendedUser)
+          if (isMounted) {
+            setUser(extendedUser)
+          }
         } else {
+          if (isMounted) {
+            setUser(null)
+          }
+        }
+      } catch (error: any) {
+        debugLog('Auth initialization failed:', error)
+        if (isMounted) {
           setUser(null)
         }
-      })
-      .catch((error: any) => {
-        console.error('auth getSession failed:', error)
-        setUser(null)
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        if (isMounted) {
+          debugLog('Auth initialization complete')
+          loadingRef.current = false
+          setLoading(false)
+        }
+      }
+    }
+
+    initAuth()
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event: any, session: Session | null) => {
+      debugLog('Auth state changed:', _event)
+
+      if (!isMounted) return
+
       try {
         if (session?.user) {
           const extendedUser = await fetchUserProfile(session.user)
-          setUser(extendedUser)
+          if (isMounted) {
+            setUser(extendedUser)
+          }
         } else {
-          setUser(null)
+          if (isMounted) {
+            setUser(null)
+          }
         }
       } catch (error: any) {
-        console.error('auth state change failed:', error)
-        setUser(session?.user || null)
+        debugLog('Auth state change handler failed:', error)
+        if (isMounted) {
+          setUser(session?.user || null)
+        }
       } finally {
-        setLoading(false)
+        if (isMounted) {
+          loadingRef.current = false
+          setLoading(false)
+        }
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      if (loadingTimeoutId) {
+        clearTimeout(loadingTimeoutId)
+      }
+      subscription.unsubscribe()
+      debugLog('Auth context cleanup')
+    }
+  // Note: loading is intentionally NOT in deps - we only want this to run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchUserProfile, supabase])
 
   const signOut = async () => {
