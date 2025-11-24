@@ -125,6 +125,7 @@ type CommentsTableMeta = {
   cancelEdit: () => void
   setDeleteCommentId?: (id: string | null) => void
   handleStatusChange?: (commentId: string, newStatus: string) => void
+  showDocumentNameInRows?: boolean
 }
 
 // Separate component for editable cell
@@ -198,7 +199,7 @@ function EditableCommentCell({
   }
 
   return (
-    <div className="whitespace-pre-wrap break-words">
+    <div className="whitespace-normal break-words">
       {comment.comment}
     </div>
   )
@@ -211,11 +212,11 @@ function EditableCommentCell({
 const columns: ColumnDef<TableComment>[] = [
   {
     accessorKey: "annotation_id",
-    header: "ID",
+    header: () => <div className="whitespace-nowrap">ID</div>,
     cell: ({ row }) => {
       const annotationId = row.original.annotation_id
       return (
-        <div className="text-sm font-medium">
+        <div className="text-sm font-medium whitespace-nowrap">
           {annotationId || (
             <span className="text-muted-foreground italic">
               {row.original.id.slice(0, 8)}...
@@ -227,20 +228,27 @@ const columns: ColumnDef<TableComment>[] = [
   },
   {
     accessorKey: "location",
-    header: "Location",
-    cell: ({ row }) => {
+    header: () => <div className="whitespace-nowrap">Location</div>,
+    cell: ({ row, table }) => {
       const sectionNumber = row.original.section_number
       const pageNumber = row.original.page_number
+      const documentName = row.original.document_name
+      const meta = table.options.meta as CommentsTableMeta
+      const showDocName = meta.showDocumentNameInRows && documentName
 
       return (
-        <div className="text-sm">
+        <div className="text-sm whitespace-normal">
           {sectionNumber && (
-            <div className="font-medium">{sectionNumber}</div>
+            <div className="font-medium break-words">{sectionNumber}</div>
           )}
-          {pageNumber && (
-            <div className="text-muted-foreground">Page {pageNumber}</div>
+          {(showDocName || pageNumber) && (
+            <div className="text-muted-foreground">
+              {showDocName && <span>{documentName}</span>}
+              {showDocName && pageNumber && <span> &gt; </span>}
+              {pageNumber && <span>Page {pageNumber}</span>}
+            </div>
           )}
-          {!sectionNumber && !pageNumber && (
+          {!sectionNumber && !pageNumber && !showDocName && (
             <span className="text-muted-foreground italic">-</span>
           )}
         </div>
@@ -249,7 +257,7 @@ const columns: ColumnDef<TableComment>[] = [
   },
   {
     accessorKey: "comment_type",
-    header: () => <div className="text-center">Type</div>,
+    header: () => <div className="text-center whitespace-nowrap">Type</div>,
     cell: ({ row }) => {
       const type = row.original.comment_type
       let TypeIcon = MessageCircle
@@ -279,29 +287,41 @@ const columns: ColumnDef<TableComment>[] = [
   },
   {
     accessorKey: "comment_status",
-    header: "Status",
+    header: () => <div className="text-center">Status</div>,
     cell: ({ row }) => {
       const status = row.original.comment_status
 
       if (status === 'accepted') {
         return (
-          <div className="flex items-center gap-2">
-            <CircleCheck className="w-4 h-4 text-emerald-700" />
-            <span className="text-emerald-700">Accepted</span>
+          <div className="flex justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div><CircleCheck className="w-4 h-4 text-emerald-700" /></div>
+              </TooltipTrigger>
+              <TooltipContent><p>Accepted</p></TooltipContent>
+            </Tooltip>
           </div>
         )
       } else if (status === 'proposed') {
         return (
-          <div className="flex items-center gap-2">
-            <CircleHelp className="w-4 h-4 text-yellow-700" />
-            <span className="text-yellow-700">Proposed</span>
+          <div className="flex justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div><CircleHelp className="w-4 h-4 text-yellow-700" /></div>
+              </TooltipTrigger>
+              <TooltipContent><p>Proposed</p></TooltipContent>
+            </Tooltip>
           </div>
         )
       } else if (status === 'rejected') {
         return (
-          <div className="flex items-center gap-2">
-            <CircleX className="w-4 h-4 text-red-700" />
-            <span className="text-red-700">Rejected</span>
+          <div className="flex justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div><CircleX className="w-4 h-4 text-red-700" /></div>
+              </TooltipTrigger>
+              <TooltipContent><p>Rejected</p></TooltipContent>
+            </Tooltip>
           </div>
         )
       }
@@ -311,7 +331,7 @@ const columns: ColumnDef<TableComment>[] = [
   {
     id: "user",
     accessorFn: (row) => getCommentUserDisplayName(row),
-    header: "User",
+    header: () => <div className="whitespace-nowrap">User</div>,
     cell: ({ row }) => {
       const user = row.original.users
       const firstName = user?.first_name || ""
@@ -328,11 +348,11 @@ const columns: ColumnDef<TableComment>[] = [
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center">
-              <Avatar className="size-8">
+              <Avatar className="size-6">
                 {user?.avatar_url && (
                   <AvatarImage src={user.avatar_url} alt={fullName} />
                 )}
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
               </Avatar>
             </div>
           </TooltipTrigger>
@@ -350,7 +370,7 @@ const columns: ColumnDef<TableComment>[] = [
     accessorKey: "highlighted_text",
     header: "Selected Text",
     cell: ({ row }) => (
-      <div className="text-sm whitespace-pre-wrap break-words">
+      <div className="text-sm whitespace-normal break-words">
         {row.original.highlighted_text ? (
           row.original.highlighted_text
         ) : (
@@ -618,6 +638,8 @@ export function CommentsTableModal({
       // extra helpers used by actions cell
       setDeleteCommentId,
       handleStatusChange,
+      // Only show document name in rows if not showing in breadcrumbs
+      showDocumentNameInRows: !documentName,
     },
   })
 
@@ -667,7 +689,17 @@ export function CommentsTableModal({
 
         {/* Table */}
         <div className="rounded-md border flex-1 overflow-auto">
-          <Table>
+          <Table style={{ tableLayout: 'fixed', width: '100%' }}>
+            <colgroup>
+              <col style={{ width: '60px' }} /> {/* ID */}
+              <col style={{ width: '25%' }} /> {/* Location */}
+              <col style={{ width: '50px' }} /> {/* Type */}
+              <col style={{ width: '50px' }} /> {/* Status - icon only */}
+              <col style={{ width: '50px' }} /> {/* User */}
+              <col /> {/* Selected Text */}
+              <col /> {/* Comment/Edit */}
+              <col style={{ width: '40px' }} /> {/* Actions */}
+            </colgroup>
             <TableHeader className="bg-muted/50">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
@@ -689,7 +721,7 @@ export function CommentsTableModal({
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
+                      <TableCell key={cell.id} className="overflow-hidden">
                         {flexRender(
                           cell.column.columnDef.cell,
                           cell.getContext(),
