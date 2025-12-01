@@ -1,5 +1,5 @@
-import ExcelJS from 'exceljs'
-import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, AlignmentType, HeadingLevel, TextRun } from 'docx'
+'use client'
+
 import { saveAs } from 'file-saver'
 import { format } from 'date-fns'
 
@@ -88,6 +88,9 @@ export async function exportToExcel(
   fileName: string,
   contextName?: string
 ): Promise<void> {
+  // Dynamically import ExcelJS only on client side
+  const ExcelJS = (await import('exceljs')).default
+
   const workbook = new ExcelJS.Workbook()
   const worksheet = workbook.addWorksheet('Comments')
 
@@ -171,6 +174,9 @@ export async function exportToWord(
   fileName: string,
   contextName?: string
 ): Promise<void> {
+  // Dynamically import docx only on client side
+  const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, HeadingLevel, TextRun } = await import('docx')
+
   // Create document header
   const titleParagraph = new Paragraph({
     text: contextName ? `${contextName} - Comments Export` : 'Comments Export',
