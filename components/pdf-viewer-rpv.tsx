@@ -682,15 +682,22 @@ export function PdfViewer({
         }
 
 
+        // Determine if popup should appear below (when selection is near top)
+        const shouldShowBelow = selectionRegion.top < 25 // If selection is in top 25% of viewport
+
         return (
           <div
             style={{
               position: "absolute",
               left: `${selectionRegion.left + selectionRegion.width / 2}%`,
-            top: `${selectionRegion.top}%`,
-            transform: "translate(-50%, -110%)",
-            zIndex: 10,
-          }}
+              top: shouldShowBelow
+                ? `${selectionRegion.top + selectionRegion.height}%`
+                : `${selectionRegion.top}%`,
+              transform: shouldShowBelow
+                ? "translate(-50%, 10%)"
+                : "translate(-50%, -110%)",
+              zIndex: 10,
+            }}
           >
             <div
               ref={popupRef}
