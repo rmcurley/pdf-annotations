@@ -28,6 +28,10 @@ import {
   CircleX,
   Edit,
   UsersRound,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  ChevronDown,
 } from "lucide-react"
 
 import {
@@ -84,6 +88,8 @@ import {
   normalizeCommentsForFiltering,
 } from "@/lib/comment-filter-config"
 import { getCommentUserDisplayName } from "@/lib/comment-utils"
+import { exportToExcel, exportToWord, generateFileName } from "@/lib/export-utils"
+import { toast } from "sonner"
 
 export interface TableComment {
   id: string
@@ -649,22 +655,68 @@ export function CommentsTableModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-[85vw] w-[85vw] !h-[85vh] max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <TableIcon className="h-5 w-5" />
-            Table View
-            {projectName && (
-              <>
-                <span className="text-muted-foreground">&gt;</span>
-                {projectName}
-              </>
-            )}
-            {documentName && (
-              <>
-                <span className="text-muted-foreground">&gt;</span>
-                {documentName}
-              </>
-            )}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <TableIcon className="h-5 w-5" />
+              Table View
+              {projectName && (
+                <>
+                  <span className="text-muted-foreground">&gt;</span>
+                  {projectName}
+                </>
+              )}
+              {documentName && (
+                <>
+                  <span className="text-muted-foreground">&gt;</span>
+                  {documentName}
+                </>
+              )}
+            </DialogTitle>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      const contextName = projectName || documentName
+                      const fileName = generateFileName('excel', contextName)
+                      await exportToExcel(sortedComments, fileName, contextName)
+                      toast.success('Excel file exported successfully')
+                    } catch (error) {
+                      console.error('Export error:', error)
+                      toast.error('Failed to export Excel file')
+                    }
+                  }}
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export to Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      const contextName = projectName || documentName
+                      const fileName = generateFileName('word', contextName)
+                      await exportToWord(sortedComments, fileName, contextName)
+                      toast.success('Word document exported successfully')
+                    } catch (error) {
+                      console.error('Export error:', error)
+                      toast.error('Failed to export Word document')
+                    }
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export to Word
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </DialogHeader>
 
         <div className="py-4 border-b flex flex-col gap-3">
