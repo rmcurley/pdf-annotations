@@ -358,39 +358,8 @@ export function PdfViewer({
   const bookmark = bookmarkPlugin()
 
   const [sidebarView, setSidebarView] = React.useState<'bookmarks' | 'thumbnails' | null>(null)
-  const [hoveredPage, setHoveredPage] = React.useState<number | null>(null)
 
-  const renderThumbnailItem = (props: any) => {
-    const isCurrent = props.pageIndex === props.currentPage
-    const isHovered = props.pageIndex === hoveredPage
-
-    return (
-      <div
-        key={props.key}
-        className="flex flex-col items-center mb-4"
-        onMouseEnter={() => setHoveredPage(props.pageIndex)}
-        onMouseLeave={() => setHoveredPage(null)}
-      >
-        <div
-          onClick={props.onJumpToPage}
-          className="cursor-pointer"
-          style={{
-            outline: (isCurrent || isHovered) ? '1px solid rgb(156, 163, 175)' : 'none',
-            outlineOffset: '2px',
-          }}
-        >
-          {props.renderPageThumbnail}
-        </div>
-        <div className="mt-2 text-sm text-center">
-          {props.renderPageLabel}
-        </div>
-      </div>
-    )
-  }
-
-  const thumbnail = thumbnailPlugin({
-    renderThumbnailItem,
-  })
+  const thumbnail = thumbnailPlugin()
 
   const { Rotate } = rotate
   const { SwitchSelectionMode } = selectionMode
