@@ -69,6 +69,13 @@ import {
 } from '@/components/ui/command'
 import type { ScaledPosition } from 'react-pdf-highlighter-extended'
 
+type BookmarkEntry = {
+  title: string
+  pageNumber: number
+  yNormalizedFromTop: number | null
+  level: number
+}
+
 interface Comment {
   id: string
   annotation_id?: string | null
@@ -109,6 +116,7 @@ interface CommentsPanelProps {
   selectedCommentId?: string | null
   scrollToCommentId?: string | null
   onFilterChange?: (filteredIds: string[]) => void
+  bookmarks?: BookmarkEntry[]
 }
 
 function formatAnnotationId(comment: Comment) {
@@ -138,7 +146,10 @@ function CommentCard({
   getTypeIcon,
   getStatusColor,
   formatStatus,
-  formatDate
+  formatDate,
+  bookmarks = [],
+  editingCommentId,
+  onEditingChange
 }: {
   comment: Comment
   selectedCommentId?: string | null
@@ -151,8 +162,12 @@ function CommentCard({
   getStatusColor: (status: string) => StatusColor
   formatStatus: (status: string) => string
   formatDate: (dateString: string) => string
+  bookmarks?: BookmarkEntry[]
+  editingCommentId?: string | null
+  onEditingChange?: (commentId: string | null) => void
 }) {
   const cardRef = React.useRef<HTMLDivElement>(null)
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editedText, setEditedText] = useState(comment.comment)
@@ -167,6 +182,26 @@ function CommentCard({
   const shortId = annotationId
   const statusColors = getStatusColor(isEditing ? editedStatus : comment.comment_status)
 
+  // Get bookmark options for the current page
+  const getBookmarkOptions = (pageNum: number | null) => {
+    if (!pageNum || !bookmarks.length) return []
+
+    const currentPageBookmarks = bookmarks.filter((b) => b.pageNumber === pageNum)
+    const previousBookmarks = bookmarks.filter((b) => b.pageNumber < pageNum)
+    const lastPreviousBookmark = previousBookmarks.length > 0
+      ? previousBookmarks[previousBookmarks.length - 1]
+      : null
+
+    const options: Array<BookmarkEntry & { isPrevious?: boolean }> = []
+    if (lastPreviousBookmark) {
+      options.push({ ...lastPreviousBookmark, isPrevious: true })
+    }
+    options.push(...currentPageBookmarks.map((b) => ({ ...b, isPrevious: false })))
+    return options
+  }
+
+  const bookmarkOptions = getBookmarkOptions(comment.page_number)
+
   // Auto-scroll to comment only when explicitly requested via scrollToCommentId
   React.useEffect(() => {
     if (scrollToCommentId === comment.id && cardRef.current) {
@@ -176,6 +211,16 @@ function CommentCard({
       })
     }
   }, [scrollToCommentId, comment.id])
+
+  // Focus textarea when entering edit mode
+  React.useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      // Use setTimeout to ensure the textarea is rendered
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 0)
+    }
+  }, [isEditing])
 
   const handleSaveEdit = async () => {
     if (!onUpdateAnnotation || !editedText.trim()) return
@@ -192,6 +237,7 @@ function CommentCard({
         page_number: pageNumber ?? undefined,
       })
       setIsEditing(false)
+      onEditingChange?.(null)
     } finally {
       setIsSaving(false)
     }
@@ -204,6 +250,7 @@ function CommentCard({
     setEditedSection(comment.section_number || '')
     setEditedPage(comment.page_number?.toString() || '')
     setIsEditing(false)
+    onEditingChange?.(null)
   }
 
   const handleCopyText = () => {
@@ -366,11 +413,15 @@ function CommentCard({
                     </TooltipContent>
                   </Tooltip>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={(e) => {
-                      e.stopPropagation()
-                      setIsEditing(true)
-                      onEditClick?.(comment)
-                    }}>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsEditing(true)
+                        onEditingChange?.(comment.id)
+                        onEditClick?.(comment)
+                      }}
+                      disabled={editingCommentId !== null && editingCommentId !== comment.id}
+                    >
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
@@ -379,9 +430,9 @@ function CommentCard({
                         e.stopPropagation()
                         setShowDeleteDialog(true)
                       }}
-                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                      className="hover:bg-destructive/10"
                     >
-                      <Trash2 className="h-4 w-4 mr-2 text-destructive" />
+                      <Trash2 className="h-4 w-4 mr-2" />
                       Delete
                     </DropdownMenuItem>
 
@@ -524,15 +575,57 @@ function CommentCard({
                   />
                 </div>
 
-                {/* Section Field - Takes remaining space */}
+                {/* Section Field - Takes remaining space with editable badge */}
                 <div className="flex-1">
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">Section</label>
-                  <Input
-                    value={editedSection}
-                    onChange={(e) => setEditedSection(e.target.value)}
-                    placeholder="e.g. 3.2.1"
-                    className="h-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full h-9 justify-start font-normal focus-visible:ring-0 focus-visible:ring-offset-0 px-3"
+                      >
+                        <span className="truncate text-left">
+                          {editedSection || "Section (optional)"}
+                        </span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Type or select section..."
+                          value={editedSection}
+                          onValueChange={setEditedSection}
+                        />
+                        <CommandList>
+                          {bookmarkOptions.length === 0 ? (
+                            <CommandEmpty>No bookmarks found for this page</CommandEmpty>
+                          ) : (
+                            <CommandGroup>
+                              {bookmarkOptions.map((bookmark, idx) => (
+                                <CommandItem
+                                  key={idx}
+                                  value={bookmark.title}
+                                  onSelect={() => {
+                                    setEditedSection(bookmark.title)
+                                  }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <TableOfContents className="w-3.5 h-3.5 text-muted-foreground" />
+                                  <span className="flex-1 truncate">{bookmark.title}</span>
+                                  {bookmark.isPrevious && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                      Previous
+                                    </Badge>
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
@@ -573,19 +666,33 @@ function CommentCard({
                     {getTypeLabelText(editedType)}
                 </label>
                 <Textarea
+                  ref={textareaRef}
                   value={editedText}
                   onChange={(e) => setEditedText(e.target.value)}
                   className="min-h-[100px] focus-visible:ring-0 focus-visible:ring-offset-0"
                   autoFocus
+                  onKeyDown={(e) => {
+                    if (isSaving) {
+                      e.preventDefault()
+                      return
+                    }
+                    if (e.key === "Escape") {
+                      handleCancelEdit()
+                    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault()
+                      handleSaveEdit()
+                    }
+                  }}
                 />
               </div>
 
               {/* Action Buttons */}
               <div className="flex gap-2 pt-2">
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={handleCancelEdit}
                   className="flex-1"
+                  disabled={isSaving}
                 >
                   <Ban className="w-4 h-4 mr-2" />
                   Cancel
@@ -607,6 +714,11 @@ function CommentCard({
                     </>
                   )}
                 </Button>
+              </div>
+
+              {/* Keyboard Shortcuts Hint */}
+              <div className="text-[10px] text-muted-foreground mt-1 text-center">
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Esc</kbd> to cancel • <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Cmd/Ctrl+Enter</kbd> to save
               </div>
             </div>
           </TooltipProvider>
@@ -690,12 +802,14 @@ export function CommentsPanel({
   selectedCommentId,
   scrollToCommentId,
   onFilterChange,
+  bookmarks = [],
 }: CommentsPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilters, setTypeFilters] = useState<string[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [userFilters, setUserFilters] = useState<string[]>([])
   const [userPopoverOpen, setUserPopoverOpen] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
 
   const toggleTypeFilter = (value: string) => {
     setTypeFilters((prev) =>
@@ -835,20 +949,20 @@ const getStatusColor = (status: string): StatusColor => {
     <div className="flex flex-col h-full bg-background overflow-hidden">
       {/* Search and Filter */}
       <div className="flex-shrink-0 border-b bg-background/80">
-        <div className="flex flex-wrap items-center gap-3 p-4">
+        <div className="flex items-center gap-2 px-3 py-2">
           <SearchInput
             value={searchQuery}
             onValueChange={setSearchQuery}
             placeholder="Search annotations..."
             wrapperClassName="flex-1 min-w-[220px]"
-            className="h-9"
+            className="h-8"
           />
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
-                className="relative h-9 w-9"
+                className="relative h-8 w-8"
               >
                 <Filter className="h-4 w-4" />
                 {(typeFilters.length + statusFilters.length + userFilters.length) > 0 && (
@@ -998,6 +1112,9 @@ const getStatusColor = (status: string): StatusColor => {
               getStatusColor={getStatusColor}
               formatStatus={formatStatus}
               formatDate={formatDate}
+              bookmarks={bookmarks}
+              editingCommentId={editingCommentId}
+              onEditingChange={setEditingCommentId}
             />
           ))
         )}

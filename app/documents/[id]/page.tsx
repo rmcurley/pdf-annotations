@@ -15,6 +15,7 @@ import { PdfViewerWrapper } from '@/components/pdf-viewer-wrapper'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { IHighlight, NewHighlight, HighlightPosition, ExtendedHighlightComment } from '@/lib/highlight-types'
+import type { BookmarkEntry } from '@/components/pdf-viewer-wrapper'
 
 type UserProfile = {
   id: string
@@ -114,6 +115,7 @@ export default function DocumentPage() {
   const [scrollToCommentId, setScrollToCommentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [annotationsVisible, setAnnotationsVisible] = useState(true)
+  const [pdfBookmarks, setPdfBookmarks] = useState<BookmarkEntry[]>([])
 
   const [tableViewOpen, setTableViewOpen] = useState(false)
 
@@ -478,6 +480,7 @@ export default function DocumentPage() {
                   scrollToHighlightId={scrollToPdfId}
                   selectedHighlightId={selectedCommentId}
                   onHighlightClick={handleHighlightClick}
+                  onBookmarksLoad={setPdfBookmarks}
                 />
               }
               rightPanel={
@@ -495,6 +498,7 @@ export default function DocumentPage() {
                   selectedCommentId={selectedCommentId}
                   scrollToCommentId={scrollToCommentId}
                   onFilterChange={setFilteredCommentIds}
+                  bookmarks={pdfBookmarks}
                 />
               }
               defaultLeftWidth={70}
