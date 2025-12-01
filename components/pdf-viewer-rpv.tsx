@@ -8,7 +8,7 @@ import { Worker, Viewer, type Plugin, SpecialZoomLevel } from "@react-pdf-viewer
 import { highlightPlugin, Trigger } from "@react-pdf-viewer/highlight"
 import { searchPlugin } from "@react-pdf-viewer/search"
 import { toolbarPlugin } from "@react-pdf-viewer/toolbar"
-import { rotatePlugin, RotateDirection } from "@react-pdf-viewer/rotate"
+import { rotatePlugin } from "@react-pdf-viewer/rotate"
 import { selectionModePlugin, SelectionMode } from "@react-pdf-viewer/selection-mode"
 import { bookmarkPlugin } from "@react-pdf-viewer/bookmark"
 import { thumbnailPlugin } from "@react-pdf-viewer/thumbnail"
@@ -63,8 +63,6 @@ import {
   MoreVertical,
   Search as SearchIcon,
   X,
-  RotateCw,
-  RotateCcw,
   Hand,
   MousePointer2,
   Check,
@@ -361,7 +359,6 @@ export function PdfViewer({
 
   const thumbnail = thumbnailPlugin()
 
-  const { Rotate } = rotate
   const { SwitchSelectionMode } = selectionMode
   const { Bookmarks } = bookmark
   const { Thumbnails } = thumbnail
@@ -1355,25 +1352,6 @@ export function PdfViewer({
                       </DropdownMenuItem>
                     )}
                   </GoToLastPage>
-
-                  <DropdownMenuSeparator />
-
-                  <Rotate direction={RotateDirection.Forward}>
-                    {(props: any) => (
-                      <DropdownMenuItem onClick={props.onClick}>
-                        <RotateCw className="h-4 w-4 mr-2" />
-                        Rotate Clockwise
-                      </DropdownMenuItem>
-                    )}
-                  </Rotate>
-                  <Rotate direction={RotateDirection.Backward}>
-                    {(props: any) => (
-                      <DropdownMenuItem onClick={props.onClick}>
-                        <RotateCcw className="h-4 w-4 mr-2" />
-                        Rotate Counter-Clockwise
-                      </DropdownMenuItem>
-                    )}
-                  </Rotate>
 
                   <DropdownMenuSeparator />
 
