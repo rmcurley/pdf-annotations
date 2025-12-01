@@ -4,15 +4,22 @@
 
 import React, { useCallback, useMemo, useState } from "react"
 
-import { Worker, Viewer, type Plugin } from "@react-pdf-viewer/core"
+import { Worker, Viewer, type Plugin, SpecialZoomLevel } from "@react-pdf-viewer/core"
 import { highlightPlugin, Trigger } from "@react-pdf-viewer/highlight"
 import { searchPlugin } from "@react-pdf-viewer/search"
 import { toolbarPlugin } from "@react-pdf-viewer/toolbar"
+import { rotatePlugin } from "@react-pdf-viewer/rotate"
+import { selectionModePlugin, SelectionMode } from "@react-pdf-viewer/selection-mode"
+import { bookmarkPlugin } from "@react-pdf-viewer/bookmark"
+import { thumbnailPlugin } from "@react-pdf-viewer/thumbnail"
 
 import "@react-pdf-viewer/core/lib/styles/index.css"
 import "@react-pdf-viewer/highlight/lib/styles/index.css"
 import "@react-pdf-viewer/search/lib/styles/index.css"
 import "@react-pdf-viewer/toolbar/lib/styles/index.css"
+import "@react-pdf-viewer/selection-mode/lib/styles/index.css"
+import "@react-pdf-viewer/bookmark/lib/styles/index.css"
+import "@react-pdf-viewer/thumbnail/lib/styles/index.css"
 
 import type { IHighlight, NewHighlight } from "@/lib/highlight-types"
 import { Button } from "@/components/ui/button"
@@ -25,13 +32,46 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   MessageCircle,
   Pencil,
   UsersRound,
   Ban,
   Loader2,
+  CircleUserRound,
+  CircleHelp,
+  CircleCheck,
+  CircleX,
+  ChevronsLeft,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+  Plus,
+  Minus,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUp,
+  ChevronsDown,
+  MoreVertical,
+  Search as SearchIcon,
+  X,
+  RotateCw,
+  RotateCcw,
+  Hand,
+  MousePointer2,
+  Check,
+  Bookmark,
+  LayoutGrid,
 } from "lucide-react"
+import { formatAnnotationId } from "@/lib/comment-utils"
 
 type HighlightArea = {
   pageIndex: number
@@ -52,6 +92,47 @@ type BookmarkEntry = {
   pageNumber: number
   yNormalizedFromTop: number | null
   level: number
+}
+
+// Helper functions for highlight styling
+const getTypeIcon = (type: string) => {
+  switch (type?.toLowerCase()) {
+    case "edit":
+      return Pencil
+    case "discussion":
+      return UsersRound
+    case "comment":
+    default:
+      return MessageCircle
+  }
+}
+
+const getStatusColor = (status: string) => {
+  switch (status?.toLowerCase()) {
+    case "accepted":
+      return {
+        bg: "bg-emerald-100 dark:bg-emerald-900/30",
+        icon: "text-emerald-600 dark:text-emerald-400",
+        badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+      }
+    case "rejected":
+      return {
+        bg: "bg-red-100 dark:bg-red-900/30",
+        icon: "text-red-600 dark:text-red-400",
+        badge: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      }
+    case "proposed":
+    default:
+      return {
+        bg: "bg-amber-100 dark:bg-amber-900/30",
+        icon: "text-amber-600 dark:text-amber-400",
+        badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+      }
+  }
+}
+
+const formatStatus = (status: string) => {
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
 }
 
 function toAreasFromHighlight(highlight: IHighlight): HighlightArea[] {
@@ -174,6 +255,11 @@ export function PdfViewer({
     pageIndex: number
     area: HighlightArea
   } | null>(null)
+  const [hoveredHighlight, setHoveredHighlight] = useState<{
+    id: string
+    position: { x: number; y: number }
+  } | null>(null)
+  const hoverTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const pdfBookmarksRef = React.useRef<BookmarkEntry[]>([])
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>([])
   const popupRef = React.useRef<HTMLDivElement | null>(null)
@@ -267,6 +353,49 @@ export function PdfViewer({
 
   const toolbar = toolbarPlugin()
   const search = searchPlugin()
+  const rotate = rotatePlugin()
+  const selectionMode = selectionModePlugin()
+  const bookmark = bookmarkPlugin()
+
+  const [sidebarView, setSidebarView] = React.useState<'bookmarks' | 'thumbnails' | null>(null)
+  const [hoveredPage, setHoveredPage] = React.useState<number | null>(null)
+
+  const renderThumbnailItem = (props: any) => {
+    const isCurrent = props.pageIndex === props.currentPage
+    const isHovered = props.pageIndex === hoveredPage
+
+    return (
+      <div
+        key={props.key}
+        className="flex flex-col items-center mb-4"
+        onMouseEnter={() => setHoveredPage(props.pageIndex)}
+        onMouseLeave={() => setHoveredPage(null)}
+      >
+        <div
+          onClick={props.onJumpToPage}
+          className="cursor-pointer"
+          style={{
+            outline: (isCurrent || isHovered) ? '1px solid rgb(156, 163, 175)' : 'none',
+            outlineOffset: '2px',
+          }}
+        >
+          {props.renderPageThumbnail}
+        </div>
+        <div className="mt-2 text-sm text-center">
+          {props.renderPageLabel}
+        </div>
+      </div>
+    )
+  }
+
+  const thumbnail = thumbnailPlugin({
+    renderThumbnailItem,
+  })
+
+  const { Rotate } = rotate
+  const { SwitchSelectionMode } = selectionMode
+  const { Bookmarks } = bookmark
+  const { Thumbnails } = thumbnail
 
   const flattenBookmarks = async (
     bookmarks: any[],
@@ -813,6 +942,32 @@ export function PdfViewer({
                     onHighlightClick(h.id)
                   }
                 }}
+                onMouseEnter={(e) => {
+                  // Clear any existing timeout
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current)
+                  }
+                  // Capture the element reference before the timeout
+                  const element = e.currentTarget
+                  // Show popup after short delay
+                  hoverTimeoutRef.current = setTimeout(() => {
+                    if (element && element.isConnected) {
+                      const rect = element.getBoundingClientRect()
+                      setHoveredHighlight({
+                        id: h.id,
+                        position: { x: rect.left + rect.width / 2, y: rect.top }
+                      })
+                    }
+                  }, 300)
+                }}
+                onMouseLeave={() => {
+                  // Clear timeout if mouse leaves before delay
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current)
+                    hoverTimeoutRef.current = null
+                  }
+                  setHoveredHighlight(null)
+                }}
               />
             )
           })}
@@ -833,10 +988,469 @@ export function PdfViewer({
     },
   })
 
-  const { Toolbar } = toolbar
   const { jumpToHighlightArea } = highlight
 
-  const plugins: Plugin[] = [toolbar, search, highlight]
+  const { Search } = search
+
+  const plugins: Plugin[] = [toolbar, search, highlight, rotate, selectionMode, bookmark, thumbnail]
+
+  // Custom toolbar render function
+  const renderToolbar = (Toolbar: (props: any) => React.ReactElement) => (
+    <Toolbar>
+      {(props: any) => {
+        const {
+          CurrentPageInput,
+          GoToFirstPage,
+          GoToLastPage,
+          GoToNextPage,
+          GoToPreviousPage,
+          NumberOfPages,
+          ZoomIn,
+          ZoomOut,
+          Zoom,
+        } = props
+
+        return (
+          <div className="flex items-center w-full px-3 py-2 bg-card border-b border-border">
+            {/* Left section - Sidebar toggles */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setSidebarView(sidebarView === 'bookmarks' ? null : 'bookmarks')}
+              >
+                <Bookmark className="h-4 w-4" />
+                <span className="sr-only">Toggle Bookmarks</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setSidebarView(sidebarView === 'thumbnails' ? null : 'thumbnails')}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                <span className="sr-only">Toggle Thumbnails</span>
+              </Button>
+            </div>
+
+            {/* Center section - Page navigation and Zoom controls */}
+            <div className="flex items-center gap-1 flex-1 justify-center">
+              <GoToPreviousPage>
+                {(props: any) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={props.onClick}
+                    disabled={props.isDisabled}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                    <span className="sr-only">Previous page</span>
+                  </Button>
+                )}
+              </GoToPreviousPage>
+              <div className="flex items-center gap-2 px-2">
+                <div className="w-16">
+                  <CurrentPageInput>
+                    {(props: any) => (
+                      <Input
+                        type="text"
+                        value={props.currentPage}
+                        onChange={(e) => {
+                          const pageNumber = parseInt(e.target.value, 10)
+                          if (!isNaN(pageNumber)) {
+                            props.onChange(pageNumber)
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const pageNumber = parseInt(e.currentTarget.value, 10)
+                            if (!isNaN(pageNumber)) {
+                              props.onChange(pageNumber)
+                            }
+                          }
+                        }}
+                        className="text-center h-8 text-sm"
+                      />
+                    )}
+                  </CurrentPageInput>
+                </div>
+                <span className="text-sm text-muted-foreground">/</span>
+                <span className="text-sm font-medium">
+                  <NumberOfPages />
+                </span>
+              </div>
+              <GoToNextPage>
+                {(props: any) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={props.onClick}
+                    disabled={props.isDisabled}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                    <span className="sr-only">Next page</span>
+                  </Button>
+                )}
+              </GoToNextPage>
+
+              <Separator orientation="vertical" className="h-6 mx-2 bg-border" />
+
+              <ZoomOut>
+                {(props: any) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={props.onClick}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Minus className="h-4 w-4" />
+                    <span className="sr-only">Zoom out</span>
+                  </Button>
+                )}
+              </ZoomOut>
+              <Zoom>
+                {(props: any) => {
+                  const [open, setOpen] = React.useState(false)
+
+                  const handleZoom = (level: number | SpecialZoomLevel) => {
+                    props.onZoom(level)
+                    setOpen(false)
+                  }
+
+                  return (
+                    <Popover open={open} onOpenChange={setOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 min-w-16 px-2 font-normal"
+                        >
+                          <span className="text-sm">{Math.round(props.scale * 100)}%</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-40 p-2" align="center">
+                        <div className="space-y-1">
+                          {/* Special zoom levels */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(SpecialZoomLevel.ActualSize)}
+                          >
+                            Actual size
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(SpecialZoomLevel.PageFit)}
+                          >
+                            Page fit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(SpecialZoomLevel.PageWidth)}
+                          >
+                            Page width
+                          </Button>
+
+                          {/* Separator */}
+                          <div className="h-px bg-border my-1" />
+
+                          {/* Percentage zoom levels */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(0.5)}
+                          >
+                            50%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(0.75)}
+                          >
+                            75%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(1)}
+                          >
+                            100%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(1.25)}
+                          >
+                            125%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(1.5)}
+                          >
+                            150%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start h-8 px-2 text-sm font-normal"
+                            onClick={() => handleZoom(2)}
+                          >
+                            200%
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )
+                }}
+              </Zoom>
+              <ZoomIn>
+                {(props: any) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={props.onClick}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="sr-only">Zoom in</span>
+                  </Button>
+                )}
+              </ZoomIn>
+            </div>
+
+            {/* Right section - Search and Kebab menu */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <Search>
+                {(renderSearchProps: any) => {
+                  const [open, setOpen] = React.useState(false)
+
+                  const handleInputChange = (value: string) => {
+                    renderSearchProps.setKeyword(value)
+                  }
+
+                  const handleSearch = () => {
+                    if (renderSearchProps.keyword.trim()) {
+                      renderSearchProps.search()
+                    }
+                  }
+
+                  const handleClear = () => {
+                    renderSearchProps.clearKeyword()
+                  }
+
+                  const hasMatches = renderSearchProps.numberOfMatches > 0
+
+                  return (
+                    <Popover open={open} onOpenChange={setOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                        >
+                          <SearchIcon className="h-4 w-4" />
+                          <span className="sr-only">Search</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-40 p-3" align="start">
+                        <div className="space-y-2">
+                          {/* Search input */}
+                          <div className="relative">
+                            <Input
+                              type="text"
+                              placeholder="Search..."
+                              value={renderSearchProps.keyword}
+                              onChange={(e) => handleInputChange(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSearch()
+                                } else if (e.key === 'Escape') {
+                                  setOpen(false)
+                                }
+                              }}
+                              className="pr-8"
+                              autoFocus
+                            />
+                            {renderSearchProps.keyword && (
+                              <button
+                                type="button"
+                                onClick={handleClear}
+                                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70"
+                              >
+                                <span className="sr-only">Clear search</span>
+                                <CircleX className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Checkboxes - stacked */}
+                          <div className="flex flex-col gap-1.5 text-sm">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={renderSearchProps.matchCase}
+                                onChange={renderSearchProps.changeMatchCase}
+                                className="rounded border-input"
+                              />
+                              <span>Match case</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={renderSearchProps.wholeWords}
+                                onChange={renderSearchProps.changeWholeWords}
+                                className="rounded border-input"
+                              />
+                              <span>Whole words</span>
+                            </label>
+                          </div>
+
+                          {/* Match counter and navigation */}
+                          {hasMatches && (
+                            <div className="flex items-center justify-between text-sm pt-1">
+                              <span className="text-muted-foreground">
+                                {renderSearchProps.currentMatch}/{renderSearchProps.numberOfMatches}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={renderSearchProps.jumpToPreviousMatch}
+                                  className="h-7 w-7 p-0"
+                                >
+                                  <ChevronUp className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={renderSearchProps.jumpToNextMatch}
+                                  className="h-7 w-7 p-0"
+                                >
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )
+                }}
+              </Search>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                    <span className="sr-only">More options</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <GoToFirstPage>
+                    {(props: any) => (
+                      <DropdownMenuItem
+                        onClick={props.onClick}
+                        disabled={props.isDisabled}
+                      >
+                        <ChevronsUp className="h-4 w-4 mr-2" />
+                        First Page
+                      </DropdownMenuItem>
+                    )}
+                  </GoToFirstPage>
+                  <GoToLastPage>
+                    {(props: any) => (
+                      <DropdownMenuItem
+                        onClick={props.onClick}
+                        disabled={props.isDisabled}
+                      >
+                        <ChevronsDown className="h-4 w-4 mr-2" />
+                        Last Page
+                      </DropdownMenuItem>
+                    )}
+                  </GoToLastPage>
+
+                  <DropdownMenuSeparator />
+
+                  <Rotate direction="Forward">
+                    {(props: any) => (
+                      <DropdownMenuItem onClick={props.onClick}>
+                        <RotateCw className="h-4 w-4 mr-2" />
+                        Rotate Clockwise
+                      </DropdownMenuItem>
+                    )}
+                  </Rotate>
+                  <Rotate direction="Backward">
+                    {(props: any) => (
+                      <DropdownMenuItem onClick={props.onClick}>
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Rotate Counter-Clockwise
+                      </DropdownMenuItem>
+                    )}
+                  </Rotate>
+
+                  <DropdownMenuSeparator />
+
+                  <SwitchSelectionMode mode={SelectionMode.Hand}>
+                    {(props: any) => (
+                      <DropdownMenuItem onClick={props.onClick}>
+                        <Hand className="h-4 w-4 mr-2" />
+                        <span className="flex-1">Hand Tool</span>
+                        {props.isSelected && <Check className="h-4 w-4 ml-2" />}
+                      </DropdownMenuItem>
+                    )}
+                  </SwitchSelectionMode>
+                  <SwitchSelectionMode mode={SelectionMode.Text}>
+                    {(props: any) => (
+                      <DropdownMenuItem onClick={props.onClick}>
+                        <MousePointer2 className="h-4 w-4 mr-2" />
+                        <span className="flex-1">Text Selection Tool</span>
+                        {props.isSelected && <Check className="h-4 w-4 ml-2" />}
+                      </DropdownMenuItem>
+                    )}
+                  </SwitchSelectionMode>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    onClick={() => setSidebarView(sidebarView === 'bookmarks' ? null : 'bookmarks')}
+                  >
+                    <Bookmark className="h-4 w-4 mr-2" />
+                    <span className="flex-1">Show Bookmarks</span>
+                    {sidebarView === 'bookmarks' && <Check className="h-4 w-4 ml-2" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setSidebarView(sidebarView === 'thumbnails' ? null : 'thumbnails')}
+                  >
+                    <LayoutGrid className="h-4 w-4 mr-2" />
+                    <span className="flex-1">Show Thumbnails</span>
+                    {sidebarView === 'thumbnails' && <Check className="h-4 w-4 ml-2" />}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        )
+      }}
+    </Toolbar>
+  )
 
   const lastScrolledIdRef = React.useRef<string | null>(null)
 
@@ -921,15 +1535,129 @@ export function PdfViewer({
       <div className="flex-1 relative overflow-hidden min-h-0">
         <div className="flex flex-col h-full">
           <div className="flex-shrink-0">
-            <Toolbar />
+            {renderToolbar(toolbar.Toolbar)}
           </div>
-          <div className="flex-1 overflow-hidden">
-            <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-              <Viewer fileUrl={pdfUrl} plugins={plugins} onDocumentLoad={handleDocumentLoad} />
-            </Worker>
+          <div className="flex-1 overflow-hidden flex">
+            {/* Sidebar */}
+            {sidebarView && (
+              <div className="w-64 border-r bg-background overflow-auto flex-shrink-0">
+                {sidebarView === 'bookmarks' && (
+                  <div className="text-xs leading-tight p-2">
+                    <Bookmarks />
+                  </div>
+                )}
+                {sidebarView === 'thumbnails' && (
+                  <div className="p-4">
+                    <Thumbnails />
+                  </div>
+                )}
+              </div>
+            )}
+            {/* PDF Viewer */}
+            <div className="flex-1 overflow-hidden">
+              <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
+                <Viewer fileUrl={pdfUrl} plugins={plugins} onDocumentLoad={handleDocumentLoad} />
+              </Worker>
+            </div>
           </div>
         </div>
+
+        {/* Hover Popup */}
+        {hoveredHighlight && (() => {
+          const highlight = rpvHighlights.find(h => h.id === hoveredHighlight.id)
+          if (!highlight || !highlight.raw.comment?.text?.trim()) return null
+
+          const commentType = (highlight.raw.comment as any)?.comment_type || "comment"
+          const commentStatus = (highlight.raw.comment as any)?.comment_status || "proposed"
+          const TypeIcon = getTypeIcon(commentType)
+          const statusColors = getStatusColor(commentStatus)
+          const formattedId = (highlight.raw.comment as any)?.annotation_id ||
+            formatAnnotationId({
+              id: highlight.id || "",
+              annotation_id: (highlight.raw.comment as any)?.annotation_id,
+            } as any)
+
+          return (
+            <div
+              className="fixed z-[9999] pointer-events-none"
+              style={{
+                left: hoveredHighlight.position.x,
+                top: hoveredHighlight.position.y - 10,
+                transform: 'translate(-50%, -100%)',
+              }}
+            >
+              <div
+                className="bg-card border border-border rounded-lg p-3 shadow-xl text-sm max-w-sm pointer-events-auto cursor-pointer"
+                onClick={() => onHighlightClick?.(highlight.id)}
+                onMouseEnter={() => {
+                  // Keep popup open when hovering over it
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current)
+                    hoverTimeoutRef.current = null
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredHighlight(null)
+                }}
+              >
+                {/* Top line - Type icon, ID, and Status badge */}
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    {/* Type Icon */}
+                    <div className={`w-6 h-6 rounded-full ${statusColors.bg} flex items-center justify-center flex-shrink-0`}>
+                      <TypeIcon className={`w-3.5 h-3.5 ${statusColors.icon}`} />
+                    </div>
+                    {/* Annotation ID */}
+                    <div className="font-semibold text-sm">
+                      {formattedId}
+                    </div>
+                  </div>
+                  {/* Status Badge */}
+                  <Badge variant="secondary" className={`${statusColors.badge} border-0 flex items-center gap-1 text-xs px-2 py-0.5 flex-shrink-0`}>
+                    {commentStatus.toLowerCase() === 'proposed' && (
+                      <CircleHelp className="w-3 h-3" />
+                    )}
+                    {commentStatus.toLowerCase() === 'accepted' && (
+                      <CircleCheck className="w-3 h-3" />
+                    )}
+                    {commentStatus.toLowerCase() === 'rejected' && (
+                      <CircleX className="w-3 h-3" />
+                    )}
+                    {formatStatus(commentStatus)}
+                  </Badge>
+                </div>
+
+                {/* Annotation text */}
+                <div className="text-foreground leading-relaxed mb-2">
+                  {highlight.raw.comment?.text}
+                </div>
+
+                {/* Separator */}
+                <div className="border-t border-border my-2"></div>
+
+                {/* User info - right aligned */}
+                <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                  <CircleUserRound className="w-3.5 h-3.5" />
+                  <span>{(highlight.raw.comment as any)?.user_name || 'Unknown User'}</span>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </div>
+
+      {/* Custom styles for search highlights */}
+      <style jsx global>{`
+        .rpv-search__highlight {
+          background-color: rgba(134, 239, 172, 0.4) !important;
+          /* Light green - green-300 with opacity */
+        }
+
+        .rpv-search__highlight--current {
+          background-color: rgba(34, 197, 94, 0.6) !important;
+          /* Darker green - green-500 with opacity */
+        }
+      `}</style>
     </div>
   )
 }

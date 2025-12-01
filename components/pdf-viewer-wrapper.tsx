@@ -3,6 +3,13 @@
 import dynamic from 'next/dynamic'
 import type { IHighlight, NewHighlight } from '@/lib/highlight-types'
 
+export type BookmarkEntry = {
+  title: string
+  pageNumber: number
+  yNormalizedFromTop: number | null
+  level: number
+}
+
 interface PdfViewerProps {
   pdfUrl: string
   highlights: IHighlight[]
@@ -10,11 +17,12 @@ interface PdfViewerProps {
   scrollToHighlightId?: string | null
   selectedHighlightId?: string | null
   onHighlightClick?: (highlightId: string) => void
+  onBookmarksLoad?: (bookmarks: BookmarkEntry[]) => void
 }
 
 // Dynamically import PdfViewer with no SSR
 const PdfViewer = dynamic(
-  () => import('./pdf-viewer').then((mod) => ({ default: mod.PdfViewer })),
+  () => import('./pdf-viewer-rpv').then((mod) => ({ default: mod.PdfViewer })),
   {
     ssr: false,
     loading: () => (
