@@ -270,9 +270,11 @@ export async function exportToWord(
           page: {
             // Tabloid size in landscape: 17" wide x 11" tall
             // TWIPS = 1/1440 inch
-            width: 24480,  // 17 inches * 1440 = 24480 TWIPS
-            height: 15840, // 11 inches * 1440 = 15840 TWIPS
-            orientation: PageOrientation.LANDSCAPE,
+            size: {
+              width: 24480,  // 17 inches * 1440 = 24480 TWIPS
+              height: 15840, // 11 inches * 1440 = 15840 TWIPS
+              orientation: PageOrientation.LANDSCAPE,
+            },
             margin: {
               top: 720,    // 0.5 inch
               right: 720,  // 0.5 inch

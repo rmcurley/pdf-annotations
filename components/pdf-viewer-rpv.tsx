@@ -253,7 +253,6 @@ export function PdfViewer({
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>([])
   const popupRef = React.useRef<HTMLDivElement | null>(null)
   const cancelRef = React.useRef<(() => void) | null>(null)
-  const overlayRafRef = React.useRef<number | null>(null)
   // Store captured selection rects to preserve them after selection is cleared
   const capturedRectsRef = React.useRef<Array<{
     x1: number
@@ -272,53 +271,6 @@ export function PdfViewer({
     setDraftOverlay(null)
     cancelRef.current = null
     capturedRectsRef.current = null
-  }, [])
-
-  const updateDraftOverlay = React.useCallback(
-    (nextOverlay: { pageIndex: number; area: HighlightArea }) => {
-      setDraftOverlay((previous) => {
-        if (
-          previous &&
-          previous.pageIndex === nextOverlay.pageIndex &&
-          Math.abs(previous.area.left - nextOverlay.area.left) < 0.0001 &&
-          Math.abs(previous.area.top - nextOverlay.area.top) < 0.0001 &&
-          Math.abs(previous.area.width - nextOverlay.area.width) < 0.0001 &&
-          Math.abs(previous.area.height - nextOverlay.area.height) < 0.0001
-        ) {
-          return previous
-        }
-
-        return nextOverlay
-      })
-    },
-    []
-  )
-
-  const scheduleDraftOverlayUpdate = React.useCallback(
-    (nextOverlay: { pageIndex: number; area: HighlightArea }) => {
-      if (typeof window === "undefined") {
-        updateDraftOverlay(nextOverlay)
-        return
-      }
-
-      if (overlayRafRef.current !== null) {
-        cancelAnimationFrame(overlayRafRef.current)
-      }
-
-      overlayRafRef.current = window.requestAnimationFrame(() => {
-        overlayRafRef.current = null
-        updateDraftOverlay(nextOverlay)
-      })
-    },
-    [updateDraftOverlay]
-  )
-
-  React.useEffect(() => {
-    return () => {
-      if (overlayRafRef.current !== null) {
-        cancelAnimationFrame(overlayRafRef.current)
-      }
-    }
   }, [])
 
   const getInlinePlaceholder = () => {
