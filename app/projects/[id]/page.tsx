@@ -183,7 +183,13 @@ export default function Page() {
             }
           }
 
-          // Map users to comments
+          // Create document ID to name map
+          const documentMap = (docsData || []).reduce((acc: Record<string, string>, doc: any) => {
+            acc[doc.id] = doc.name
+            return acc
+          }, {} as Record<string, string>)
+
+          // Map users and documents to comments
           const commentsWithUsers = fullCommentsData.map((comment: any) => {
             let mappedUser: TableComment['users'] = undefined
 
@@ -206,6 +212,8 @@ export default function Page() {
               comment: comment.comment ?? '',
               section_number: comment.section_number ?? null,
               page_number: comment.page_number ?? null,
+              document_name: comment.document_id ? documentMap[comment.document_id] : undefined,
+              highlight_position: comment.highlight_position ?? undefined,
               created_at: comment.created_at,
               users: mappedUser,
             }

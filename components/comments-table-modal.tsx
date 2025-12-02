@@ -80,6 +80,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { DataTableFilter, useDataTableFilters } from "@/components/data-table-filter"
 import { SearchInput } from "@/components/search-input"
 import {
@@ -125,8 +130,12 @@ interface CommentsTableModalProps {
 type CommentsTableMeta = {
   editingCommentId: string | null
   editedComment: string
+  editedType?: string
+  editedStatus?: string
   setEditingCommentId: (id: string | null) => void
   setEditedComment: (value: string) => void
+  setEditedType?: (value: string) => void
+  setEditedStatus?: (value: string) => void
   saveEdit: () => void
   cancelEdit: () => void
   setDeleteCommentId?: (id: string | null) => void
@@ -152,11 +161,11 @@ function EditableCommentCell({
 }) {
   if (isEditing) {
     return (
-      <div className="flex items-center gap-2 py-2">
+      <div className="flex items-start gap-2 py-2">
         <Textarea
           value={editedValue}
           onChange={(e) => onValueChange(e.target.value)}
-          className="min-h-[80px] max-w-md resize-none"
+          className="min-h-[120px] flex-1 resize-y"
           autoFocus
           onKeyDown={(e) => {
             if (e.key === "Enter" && e.ctrlKey) {
@@ -168,7 +177,7 @@ function EditableCommentCell({
             }
           }}
         />
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -244,15 +253,19 @@ const columns: ColumnDef<TableComment>[] = [
 
       return (
         <div className="text-sm whitespace-normal">
-          {sectionNumber && (
+          {showDocName && sectionNumber && (
+            <div className="font-medium break-words">
+              {documentName} &gt; {sectionNumber}
+            </div>
+          )}
+          {showDocName && !sectionNumber && (
+            <div className="font-medium break-words">{documentName}</div>
+          )}
+          {!showDocName && sectionNumber && (
             <div className="font-medium break-words">{sectionNumber}</div>
           )}
-          {(showDocName || pageNumber) && (
-            <div className="text-muted-foreground">
-              {showDocName && <span>{documentName}</span>}
-              {showDocName && pageNumber && <span> &gt; </span>}
-              {pageNumber && <span>Page {pageNumber}</span>}
-            </div>
+          {pageNumber && (
+            <div className="text-muted-foreground">Page {pageNumber}</div>
           )}
           {!sectionNumber && !pageNumber && !showDocName && (
             <span className="text-muted-foreground italic">-</span>
@@ -264,8 +277,12 @@ const columns: ColumnDef<TableComment>[] = [
   {
     accessorKey: "comment_type",
     header: () => <div className="text-center whitespace-nowrap">Type</div>,
-    cell: ({ row }) => {
-      const type = row.original.comment_type
+    cell: ({ row, table }) => {
+      const meta = table.options.meta as CommentsTableMeta
+      const comment = row.original
+      const isEditing = meta.editingCommentId === comment.id
+      const type = meta.editedType || row.original.comment_type
+
       let TypeIcon = MessageCircle
       let typeLabel = "Comment"
       if (type === "edit") {
@@ -275,6 +292,52 @@ const columns: ColumnDef<TableComment>[] = [
         TypeIcon = UsersRound
         typeLabel = "Discussion"
       }
+
+      if (isEditing) {
+        return (
+          <div className="flex items-center justify-center">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <TypeIcon className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-40 p-2" align="center">
+                <div className="space-y-1">
+                  <Button
+                    variant={type === "comment" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedType?.("comment")}
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Comment
+                  </Button>
+                  <Button
+                    variant={type === "edit" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedType?.("edit")}
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant={type === "discussion" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedType?.("discussion")}
+                  >
+                    <UsersRound className="w-4 h-4 mr-2" />
+                    Discussion
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )
+      }
+
       return (
         <div className="flex items-center justify-center">
           <Tooltip>
@@ -294,44 +357,81 @@ const columns: ColumnDef<TableComment>[] = [
   {
     accessorKey: "comment_status",
     header: () => <div className="text-center">Status</div>,
-    cell: ({ row }) => {
-      const status = row.original.comment_status
+    cell: ({ row, table }) => {
+      const meta = table.options.meta as CommentsTableMeta
+      const comment = row.original
+      const isEditing = meta.editingCommentId === comment.id
+      const status = meta.editedStatus || row.original.comment_status
+
+      let StatusIcon = CircleHelp
+      let statusLabel = "Proposed"
+      let statusColor = "text-yellow-700"
 
       if (status === 'accepted') {
-        return (
-          <div className="flex justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div><CircleCheck className="w-4 h-4 text-emerald-700" /></div>
-              </TooltipTrigger>
-              <TooltipContent><p>Accepted</p></TooltipContent>
-            </Tooltip>
-          </div>
-        )
-      } else if (status === 'proposed') {
-        return (
-          <div className="flex justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div><CircleHelp className="w-4 h-4 text-yellow-700" /></div>
-              </TooltipTrigger>
-              <TooltipContent><p>Proposed</p></TooltipContent>
-            </Tooltip>
-          </div>
-        )
+        StatusIcon = CircleCheck
+        statusLabel = "Accepted"
+        statusColor = "text-emerald-700"
       } else if (status === 'rejected') {
+        StatusIcon = CircleX
+        statusLabel = "Rejected"
+        statusColor = "text-red-700"
+      }
+
+      if (isEditing) {
         return (
           <div className="flex justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div><CircleX className="w-4 h-4 text-red-700" /></div>
-              </TooltipTrigger>
-              <TooltipContent><p>Rejected</p></TooltipContent>
-            </Tooltip>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <StatusIcon className={`w-4 h-4 ${statusColor}`} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-40 p-2" align="center">
+                <div className="space-y-1">
+                  <Button
+                    variant={status === "proposed" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedStatus?.("proposed")}
+                  >
+                    <CircleHelp className="w-4 h-4 mr-2 text-yellow-700" />
+                    Proposed
+                  </Button>
+                  <Button
+                    variant={status === "accepted" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedStatus?.("accepted")}
+                  >
+                    <CircleCheck className="w-4 h-4 mr-2 text-emerald-700" />
+                    Accepted
+                  </Button>
+                  <Button
+                    variant={status === "rejected" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => meta.setEditedStatus?.("rejected")}
+                  >
+                    <CircleX className="w-4 h-4 mr-2 text-red-700" />
+                    Rejected
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         )
       }
-      return <span className="capitalize">{status}</span>
+
+      return (
+        <div className="flex justify-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div><StatusIcon className={`w-4 h-4 ${statusColor}`} /></div>
+            </TooltipTrigger>
+            <TooltipContent><p>{statusLabel}</p></TooltipContent>
+          </Tooltip>
+        </div>
+      )
     },
   },
   {
@@ -434,6 +534,8 @@ const columns: ColumnDef<TableComment>[] = [
               onClick={() => {
                 meta.setEditingCommentId(comment.id)
                 meta.setEditedComment(comment.comment)
+                meta.setEditedType?.(comment.comment_type)
+                meta.setEditedStatus?.(comment.comment_status)
               }}
             >
               <Edit className="h-4 w-4 mr-2" />
@@ -441,9 +543,9 @@ const columns: ColumnDef<TableComment>[] = [
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => meta?.setDeleteCommentId?.(comment.id)}
-              className="text-destructive focus:text-destructive focus:bg-destructive/10"
+              className="hover:bg-destructive/10 focus:bg-destructive/10"
             >
-              <Trash2 className="h-4 w-4 mr-2 text-destructive" />
+              <Trash2 className="h-4 w-4 mr-2" />
               Delete
             </DropdownMenuItem>
 
@@ -505,6 +607,8 @@ export function CommentsTableModal({
   const [editingCommentId, setEditingCommentId] =
     React.useState<string | null>(null)
   const [editedComment, setEditedComment] = React.useState<string>("")
+  const [editedType, setEditedType] = React.useState<string>("")
+  const [editedStatus, setEditedStatus] = React.useState<string>("")
   const [searchQuery, setSearchQuery] = React.useState("")
 
   const normalizedComments = React.useMemo(
@@ -558,27 +662,28 @@ export function CommentsTableModal({
 
   const sortedComments = React.useMemo(() => {
     return [...filteredByFilters].sort((a, b) => {
+      // 1. Sort by document name (alphabetically)
       const docA = (a.document_name || "").toLowerCase()
       const docB = (b.document_name || "").toLowerCase()
       if (docA !== docB) return docA < docB ? -1 : 1
 
+      // 2. Sort by page number
       const pageA = Number.isFinite(a.page_number) ? (a.page_number as number) : Number.POSITIVE_INFINITY
       const pageB = Number.isFinite(b.page_number) ? (b.page_number as number) : Number.POSITIVE_INFINITY
       if (pageA !== pageB) return pageA - pageB
 
-      const getLeft = (comment: TableComment) => {
-        const pos = comment.highlight_position as any
-        if (pos?.boundingRect?.x1 != null) return Number(pos.boundingRect.x1) || 0
-        if (Array.isArray(pos?.rects) && pos.rects.length > 0) {
-          const xs = pos.rects
-            .map((r: any) => Number(r?.x1))
-            .filter((x: number) => Number.isFinite(x))
-          if (xs.length) return Math.min(...xs)
-        }
-        return 0
+      // 3. Sort by vertical position (y1 - smaller = higher on page = top to bottom)
+      const aY = a.highlight_position?.boundingRect?.y1 ?? 0
+      const bY = b.highlight_position?.boundingRect?.y1 ?? 0
+      const yDiff = aY - bY
+      if (Math.abs(yDiff) > 5) { // Use 5px tolerance for different lines
+        return yDiff
       }
 
-      return getLeft(a) - getLeft(b)
+      // 4. Sort by horizontal position (x1 - smaller = left side)
+      const aX = a.highlight_position?.boundingRect?.x1 ?? 0
+      const bX = b.highlight_position?.boundingRect?.x1 ?? 0
+      return aX - bX
     })
   }, [filteredByFilters])
 
@@ -592,19 +697,35 @@ export function CommentsTableModal({
   const handleSaveEdit = React.useCallback(async () => {
     if (!editingCommentId || !onUpdateAnnotation) return
 
+    const updates: Partial<TableComment> = {}
+
     if (editedComment.trim()) {
-      await onUpdateAnnotation(editingCommentId, {
-        comment: editedComment.trim(),
-      })
+      updates.comment = editedComment.trim()
+    }
+
+    if (editedType) {
+      updates.comment_type = editedType
+    }
+
+    if (editedStatus) {
+      updates.comment_status = editedStatus
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await onUpdateAnnotation(editingCommentId, updates)
     }
 
     setEditingCommentId(null)
     setEditedComment("")
-  }, [editingCommentId, editedComment, onUpdateAnnotation])
+    setEditedType("")
+    setEditedStatus("")
+  }, [editingCommentId, editedComment, editedType, editedStatus, onUpdateAnnotation])
 
   const handleCancelEdit = React.useCallback(() => {
     setEditingCommentId(null)
     setEditedComment("")
+    setEditedType("")
+    setEditedStatus("")
   }, [])
 
   const handleStatusChange = React.useCallback(
@@ -637,8 +758,12 @@ export function CommentsTableModal({
     meta: {
       editingCommentId,
       editedComment,
+      editedType,
+      editedStatus,
       setEditingCommentId,
       setEditedComment,
+      setEditedType,
+      setEditedStatus,
       saveEdit: handleSaveEdit,
       cancelEdit: handleCancelEdit,
       // extra helpers used by actions cell
@@ -655,27 +780,44 @@ export function CommentsTableModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-[85vw] w-[85vw] !h-[85vh] max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <TableIcon className="h-5 w-5" />
-              Table View
-              {projectName && (
-                <>
-                  <span className="text-muted-foreground">&gt;</span>
-                  {projectName}
-                </>
-              )}
-              {documentName && (
-                <>
-                  <span className="text-muted-foreground">&gt;</span>
-                  {documentName}
-                </>
-              )}
-            </DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <TableIcon className="h-5 w-5" />
+            Table View
+            {projectName && (
+              <>
+                <span className="text-muted-foreground">&gt;</span>
+                {projectName}
+              </>
+            )}
+            {documentName && (
+              <>
+                <span className="text-muted-foreground">&gt;</span>
+                {documentName}
+              </>
+            )}
+          </DialogTitle>
+        </DialogHeader>
 
+        <div className="py-4 border-b flex flex-col gap-3">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
+            <SearchInput
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+              placeholder="Search comments or selected text..."
+              wrapperClassName="w-full md:w-[360px] lg:w-[420px]"
+              className="h-9"
+            />
+            <div className="flex-1 min-w-[220px]">
+              <DataTableFilter
+                filters={activeFilters}
+                columns={filterColumns}
+                actions={filterActions}
+                strategy={filterStrategy}
+              />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" className="h-9">
                   <Download className="h-4 w-4 mr-2" />
                   Export
                   <ChevronDown className="h-4 w-4 ml-2" />
@@ -717,40 +859,21 @@ export function CommentsTableModal({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </DialogHeader>
-
-        <div className="py-4 border-b flex flex-col gap-3">
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
-            <SearchInput
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              placeholder="Search comments or selected text..."
-              wrapperClassName="w-full md:w-[360px] lg:w-[420px]"
-              className="h-9"
-            />
-            <div className="flex-1 min-w-[220px]">
-              <DataTableFilter
-                filters={activeFilters}
-                columns={filterColumns}
-                actions={filterActions}
-                strategy={filterStrategy}
-              />
-            </div>
-          </div>
         </div>
 
         {/* Table */}
         <div className="rounded-md border flex-1 overflow-auto">
           <Table style={{ tableLayout: 'fixed', width: '100%' }}>
+            {/* Column widths: ID, Location, Type, Status, User, Selected Text, Comment/Edit, Actions */}
             <colgroup>
-              <col style={{ width: '60px' }} /> {/* ID */}
-              <col style={{ width: '25%' }} /> {/* Location */}
-              <col style={{ width: '50px' }} /> {/* Type */}
-              <col style={{ width: '50px' }} /> {/* Status - icon only */}
-              <col style={{ width: '50px' }} /> {/* User */}
-              <col /> {/* Selected Text */}
-              <col /> {/* Comment/Edit */}
-              <col style={{ width: '40px' }} /> {/* Actions */}
+              <col style={{ width: '60px' }} />
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '50px' }} />
+              <col style={{ width: '50px' }} />
+              <col style={{ width: '50px' }} />
+              <col />
+              <col />
+              <col style={{ width: '40px' }} />
             </colgroup>
             <TableHeader className="bg-muted/50">
               {table.getHeaderGroups().map((headerGroup) => (

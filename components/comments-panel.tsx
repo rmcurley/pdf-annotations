@@ -874,14 +874,25 @@ export function CommentsPanel({
     })
 
     return [...filtered].sort((a, b) => {
+      // 1. Sort by page number
       const aPage = a.page_number ?? Number.MAX_SAFE_INTEGER
       const bPage = b.page_number ?? Number.MAX_SAFE_INTEGER
       if (aPage !== bPage) {
         return aPage - bPage
       }
+
+      // 2. Sort by vertical position (y1 - smaller = higher on page = top to bottom)
       const aY = a.highlight_position?.boundingRect?.y1 || 0
       const bY = b.highlight_position?.boundingRect?.y1 || 0
-      return aY - bY
+      const yDiff = aY - bY
+      if (Math.abs(yDiff) > 5) { // Use 5px tolerance for different lines
+        return yDiff
+      }
+
+      // 3. Sort by horizontal position (x1 - smaller = left side)
+      const aX = a.highlight_position?.boundingRect?.x1 || 0
+      const bX = b.highlight_position?.boundingRect?.x1 || 0
+      return aX - bX
     })
   }, [comments, searchQuery, statusFilters, typeFilters, userFilters])
 
@@ -1094,8 +1105,21 @@ const getStatusColor = (status: string): StatusColor => {
         {filteredComments.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>No annotations yet</p>
-            <p className="text-sm">Click and drag on the PDF to add an annotation</p>
+            {comments.length === 0 ? (
+              <>
+                <p>No annotations yet</p>
+                <p className="text-sm">Click and drag on the PDF to add an annotation</p>
+              </>
+            ) : searchQuery.trim() !== '' ? (
+              <p>No annotations match your search</p>
+            ) : (typeFilters.length > 0 || statusFilters.length > 0 || userFilters.length > 0) ? (
+              <p>No annotations match your filters</p>
+            ) : (
+              <>
+                <p>No annotations yet</p>
+                <p className="text-sm">Click and drag on the PDF to add an annotation</p>
+              </>
+            )}
           </div>
         ) : (
           filteredComments.map((comment) => (

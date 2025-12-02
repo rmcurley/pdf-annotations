@@ -138,6 +138,10 @@ export default function DocumentPage() {
   }, [])
 
   useEffect(() => {
+    console.log('[documents] useEffect converting comments to highlights', {
+      totalComments: comments.length,
+      filteredCommentIds: filteredCommentIds,
+    })
     // Convert comments to highlights format, filtering by filteredCommentIds if set
     const commentsToShow = filteredCommentIds.length > 0
       ? comments.filter(c => filteredCommentIds.includes(c.id))
@@ -173,6 +177,10 @@ export default function DocumentPage() {
         position: normalizeHighlightPosition(comment.highlight_position),
         comment: commentMeta,
       }
+    })
+    console.log('[documents] Setting highlights state', {
+      count: newHighlights.length,
+      highlights: newHighlights,
     })
     setHighlights(newHighlights)
   }, [comments, filteredCommentIds])
@@ -289,6 +297,10 @@ export default function DocumentPage() {
         users: comment.user_id ? usersMap.get(comment.user_id) : undefined
       })) || []
 
+      console.log('[documents] Setting comments state', {
+        count: commentsWithUsers.length,
+        comments: commentsWithUsers,
+      })
       setComments(commentsWithUsers)
     } catch (error) {
       console.error('Error fetching comments:', error)
@@ -390,8 +402,14 @@ export default function DocumentPage() {
 
       console.log('Comment saved successfully:', data)
 
-      // Refresh comments
-      fetchComments()
+      // If there are active filters, add the new comment ID to the filter
+      // so it shows up immediately in the highlights
+      if (filteredCommentIds.length > 0 && data?.id) {
+        setFilteredCommentIds([...filteredCommentIds, data.id])
+      }
+
+      // Refresh comments - await to ensure highlight persists before draft is cleared
+      await fetchComments()
     } catch (error) {
       console.error('Error adding highlight:', error)
     }

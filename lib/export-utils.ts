@@ -2,6 +2,7 @@
 
 import { saveAs } from 'file-saver'
 import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
 
 export interface ExportComment {
   id: string
@@ -88,84 +89,45 @@ export async function exportToExcel(
   fileName: string,
   contextName?: string
 ): Promise<void> {
-  // Dynamically import ExcelJS only on client side
-  const ExcelJS = (await import('exceljs')).default
+  // Prepare data for Excel
+  const data = comments.map((comment) => ({
+    'ID': formatAnnotationId(comment),
+    'Document': comment.document_name || '-',
+    'Section': comment.section_number || '-',
+    'Page': comment.page_number?.toString() || '-',
+    'Type': formatType(comment.comment_type),
+    'Status': formatStatus(comment.comment_status),
+    'User': formatUserName(comment.users),
+    'Selected Text': comment.highlighted_text || '-',
+    'Comment/Edit': comment.comment || '-',
+    'Date': formatDate(comment.created_at),
+  }))
 
-  const workbook = new ExcelJS.Workbook()
-  const worksheet = workbook.addWorksheet('Comments')
+  // Create worksheet from data
+  const worksheet = XLSX.utils.json_to_sheet(data)
 
-  // Define columns
-  worksheet.columns = [
-    { header: 'ID', key: 'id', width: 15 },
-    { header: 'Document', key: 'document', width: 25 },
-    { header: 'Section', key: 'section', width: 30 },
-    { header: 'Page', key: 'page', width: 8 },
-    { header: 'Type', key: 'type', width: 12 },
-    { header: 'Status', key: 'status', width: 12 },
-    { header: 'User', key: 'user', width: 20 },
-    { header: 'Selected Text', key: 'selectedText', width: 40 },
-    { header: 'Comment/Edit', key: 'comment', width: 50 },
-    { header: 'Date', key: 'date', width: 20 },
+  // Set column widths
+  const columnWidths = [
+    { wch: 15 }, // ID
+    { wch: 25 }, // Document
+    { wch: 30 }, // Section
+    { wch: 8 },  // Page
+    { wch: 12 }, // Type
+    { wch: 12 }, // Status
+    { wch: 20 }, // User
+    { wch: 40 }, // Selected Text
+    { wch: 50 }, // Comment/Edit
+    { wch: 20 }, // Date
   ]
+  worksheet['!cols'] = columnWidths
 
-  // Style header row
-  const headerRow = worksheet.getRow(1)
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
-  headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF4472C4' }
-  }
-  headerRow.alignment = { vertical: 'middle', horizontal: 'center' }
-  headerRow.height = 20
+  // Create workbook and add worksheet
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Comments')
 
-  // Add data rows
-  comments.forEach((comment) => {
-    const row = worksheet.addRow({
-      id: formatAnnotationId(comment),
-      document: comment.document_name || '-',
-      section: comment.section_number || '-',
-      page: comment.page_number?.toString() || '-',
-      type: formatType(comment.comment_type),
-      status: formatStatus(comment.comment_status),
-      user: formatUserName(comment.users),
-      selectedText: comment.highlighted_text || '-',
-      comment: comment.comment || '-',
-      date: formatDate(comment.created_at),
-    })
-
-    // Enable text wrapping for long content
-    row.getCell('selectedText').alignment = { wrapText: true, vertical: 'top' }
-    row.getCell('comment').alignment = { wrapText: true, vertical: 'top' }
-    row.alignment = { vertical: 'top' }
-  })
-
-  // Add borders to all cells
-  worksheet.eachRow((row, rowNumber) => {
-    row.eachCell((cell) => {
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' },
-      }
-    })
-  })
-
-  // Enable auto-filter
-  worksheet.autoFilter = {
-    from: 'A1',
-    to: `J1`,
-  }
-
-  // Freeze header row
-  worksheet.views = [
-    { state: 'frozen', xSplit: 0, ySplit: 1 }
-  ]
-
-  // Generate and download file
-  const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  // Generate Excel file as binary string and trigger download
+  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   saveAs(blob, fileName)
 }
 
@@ -175,7 +137,7 @@ export async function exportToWord(
   contextName?: string
 ): Promise<void> {
   // Dynamically import docx only on client side
-  const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, HeadingLevel, TextRun } = await import('docx')
+  const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, HeadingLevel, TextRun, PageOrientation } = await import('docx')
 
   // Create document header
   const titleParagraph = new Paragraph({
@@ -306,11 +268,16 @@ export async function exportToWord(
       {
         properties: {
           page: {
+            // Tabloid size in landscape: 17" wide x 11" tall
+            // TWIPS = 1/1440 inch
+            width: 24480,  // 17 inches * 1440 = 24480 TWIPS
+            height: 15840, // 11 inches * 1440 = 15840 TWIPS
+            orientation: PageOrientation.LANDSCAPE,
             margin: {
-              top: 720,
-              right: 720,
-              bottom: 720,
-              left: 720,
+              top: 720,    // 0.5 inch
+              right: 720,  // 0.5 inch
+              bottom: 720, // 0.5 inch
+              left: 720,   // 0.5 inch
             },
           },
         },

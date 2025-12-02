@@ -182,15 +182,6 @@ function toAreasFromHighlight(highlight: IHighlight): HighlightArea[] {
       width = ((x2 - x1) / pageWidth) * 100
       height = ((y2 - y1) / pageHeight) * 100
 
-      // Log first rect to debug
-      if (index === 0 && highlight.id) {
-        console.log("[RPV] Converting pixel coords to percentages", {
-          highlightId: highlight.id,
-          pixels: { x1, y1, x2, y2 },
-          pageDimensions: { pageWidth, pageHeight },
-          percentages: { left, top, width, height },
-        })
-      }
     } else {
       // Fallback: assume coordinates are already percentages
       left = x1
@@ -251,7 +242,7 @@ export function PdfViewer({
   const [sectionNumber, setSectionNumber] = useState("")
   const [draftOverlay, setDraftOverlay] = useState<{
     pageIndex: number
-    area: HighlightArea
+    areas: HighlightArea[]
   } | null>(null)
   const [hoveredHighlight, setHoveredHighlight] = useState<{
     id: string
@@ -263,6 +254,16 @@ export function PdfViewer({
   const popupRef = React.useRef<HTMLDivElement | null>(null)
   const cancelRef = React.useRef<(() => void) | null>(null)
   const overlayRafRef = React.useRef<number | null>(null)
+  // Store captured selection rects to preserve them after selection is cleared
+  const capturedRectsRef = React.useRef<Array<{
+    x1: number
+    y1: number
+    x2: number
+    y2: number
+    width: number
+    height: number
+    pageNumber: number
+  }> | null>(null)
 
   const resetInlineState = React.useCallback(() => {
     setInlineAnnotationText("")
@@ -270,6 +271,7 @@ export function PdfViewer({
     setSectionNumber("")
     setDraftOverlay(null)
     cancelRef.current = null
+    capturedRectsRef.current = null
   }, [])
 
   const updateDraftOverlay = React.useCallback(
@@ -331,14 +333,16 @@ export function PdfViewer({
   }
 
   const rpvHighlights: RpvHighlight[] = useMemo(
-    () =>
-      (highlights || [])
+    () => {
+      const converted = (highlights || [])
         .map((h) => ({
           id: h.id || "",
           areas: toAreasFromHighlight(h),
           raw: h,
         }))
-        .filter((h) => h.id && h.areas.length > 0),
+        .filter((h) => h.id && h.areas.length > 0)
+      return converted
+    },
     [highlights]
   )
 
@@ -536,6 +540,128 @@ export function PdfViewer({
 
         cancelRef.current = cancelSelection
 
+        // Capture the selection rects IMMEDIATELY while selection still exists
+        // (before any click handlers or state changes clear the selection)
+        const resolvedPageIndexEarly =
+          typeof pageIndex === "number"
+            ? pageIndex
+            : typeof selectionRegion?.pageIndex === "number"
+              ? selectionRegion.pageIndex
+              : typeof selectionRegion?.pageNumber === "number"
+                ? selectionRegion.pageNumber - 1
+                : 0
+        const pageNumberForRectEarly = resolvedPageIndexEarly + 1
+
+        let pageElementEarly = document.querySelector(`[data-page-number="${pageNumberForRectEarly}"]`) as HTMLElement
+        if (!pageElementEarly) {
+          pageElementEarly = document.querySelector(`[data-page-index="${resolvedPageIndexEarly}"]`) as HTMLElement
+        }
+        if (!pageElementEarly) {
+          const allPages = document.querySelectorAll('.rpv-core__page-layer')
+          pageElementEarly = allPages[resolvedPageIndexEarly] as HTMLElement
+        }
+
+        if (pageElementEarly) {
+          const selection = window.getSelection()
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0)
+            const clientRects = range.getClientRects()
+
+            if (clientRects.length > 0) {
+              const pageRect = pageElementEarly.getBoundingClientRect()
+              const pageWidth = pageElementEarly.offsetWidth
+              const pageHeight = pageElementEarly.offsetHeight
+
+              const rects = Array.from(clientRects)
+                .map(rect => ({
+                  x1: rect.left - pageRect.left,
+                  y1: rect.top - pageRect.top,
+                  x2: rect.right - pageRect.left,
+                  y2: rect.bottom - pageRect.top,
+                  width: pageWidth,
+                  height: pageHeight,
+                  pageNumber: pageNumberForRectEarly,
+                }))
+                .filter(rect => {
+                  // Filter out invalid rects with zero or negative width/height
+                  const rectWidth = rect.x2 - rect.x1
+                  const rectHeight = rect.y2 - rect.y1
+                  return rectWidth > 1 && rectHeight > 1
+                })
+
+              // Merge overlapping rects on the same line to avoid double-highlighting
+              const mergedRects = mergeOverlappingRects(rects)
+
+              capturedRectsRef.current = mergedRects
+
+              // Update draft overlay with all areas (use setTimeout to avoid setState during render)
+              const draftAreas: HighlightArea[] = mergedRects.map(rect => ({
+                pageIndex: resolvedPageIndexEarly,
+                left: (rect.x1 / pageWidth) * 100,
+                top: (rect.y1 / pageHeight) * 100,
+                width: ((rect.x2 - rect.x1) / pageWidth) * 100,
+                height: ((rect.y2 - rect.y1) / pageHeight) * 100,
+              }))
+
+              setTimeout(() => {
+                setDraftOverlay({
+                  pageIndex: resolvedPageIndexEarly,
+                  areas: draftAreas,
+                })
+              }, 0)
+            }
+          }
+        }
+
+        // Helper function to merge overlapping rectangles on the same line
+        function mergeOverlappingRects(rects: Array<{
+          x1: number; y1: number; x2: number; y2: number;
+          width: number; height: number; pageNumber: number
+        }>) {
+          if (rects.length === 0) return rects
+
+          // Sort by vertical position (y1) then horizontal position (x1)
+          const sorted = [...rects].sort((a, b) => {
+            const yDiff = a.y1 - b.y1
+            if (Math.abs(yDiff) > 5) return yDiff // Different lines (5px threshold)
+            return a.x1 - b.x1 // Same line, sort left to right
+          })
+
+          const merged: typeof rects = []
+          let current = sorted[0]
+
+          for (let i = 1; i < sorted.length; i++) {
+            const next = sorted[i]
+
+            // Check if on the same line (similar y coordinates)
+            const onSameLine = Math.abs(current.y1 - next.y1) < 5 && Math.abs(current.y2 - next.y2) < 5
+
+            // Check if overlapping or adjacent on same line
+            const overlapping = onSameLine && next.x1 <= current.x2 + 2 // 2px tolerance for adjacent
+
+            if (overlapping) {
+              // Merge: extend current rect to include next
+              // Keep current.x1 (don't use Math.min) to preserve reading-order start position
+              current = {
+                x1: current.x1, // Keep the leftmost x1 from reading order (already sorted)
+                y1: Math.min(current.y1, next.y1),
+                x2: Math.max(current.x2, next.x2),
+                y2: Math.max(current.y2, next.y2),
+                width: current.width,
+                height: current.height,
+                pageNumber: current.pageNumber,
+              }
+            } else {
+              // Start a new rect
+              merged.push(current)
+              current = next
+            }
+          }
+
+          merged.push(current)
+          return merged
+        }
+
       const handleInlineSave = async () => {
         if (!inlineAnnotationText.trim() || inlineSaving) return
 
@@ -563,7 +689,18 @@ export function PdfViewer({
           const pageNumberForRect = resolvedPageIndex + 1
 
           // Get the page element to find actual dimensions
-          const pageElement = document.querySelector(`[data-page-number="${pageNumberForRect}"]`) as HTMLElement
+          // Try multiple selectors since RPV might use different attributes
+          let pageElement = document.querySelector(`[data-page-number="${pageNumberForRect}"]`) as HTMLElement
+          if (!pageElement) {
+            pageElement = document.querySelector(`[data-page-index="${resolvedPageIndex}"]`) as HTMLElement
+          }
+          if (!pageElement) {
+            // Try finding by the page layer class
+            const allPages = document.querySelectorAll('.rpv-core__page-layer')
+            pageElement = allPages[resolvedPageIndex] as HTMLElement
+          }
+
+
           let pageWidth = 816  // Default fallback
           let pageHeight = 1056 // Default fallback
 
@@ -572,25 +709,104 @@ export function PdfViewer({
             pageHeight = pageElement.offsetHeight
           }
 
-          // Convert percentages to pixels (same format as old library)
-          const x1Pixels = (leftPercent / 100) * pageWidth
-          const y1Pixels = (topPercent / 100) * pageHeight
-          const x2Pixels = ((leftPercent + widthPercent) / 100) * pageWidth
-          const y2Pixels = ((topPercent + heightPercent) / 100) * pageHeight
+          // Extract individual line rectangles from DOM selection for multi-line support
+          const getMultiLineRects = (): Array<{
+            x1: number
+            y1: number
+            x2: number
+            y2: number
+            width: number
+            height: number
+            pageNumber: number
+          }> => {
+            // First, check if we have cached rects from the initial selection capture
+            if (capturedRectsRef.current && capturedRectsRef.current.length > 0) {
+              return capturedRectsRef.current
+            }
 
-          const boundingRect = {
-            x1: x1Pixels,
-            y1: y1Pixels,
-            x2: x2Pixels,
-            y2: y2Pixels,
-            width: pageWidth,
-            height: pageHeight,
-            pageNumber: pageNumberForRect,
+            const selection = window.getSelection()
+            if (!selection || selection.rangeCount === 0 || !pageElement) {
+              // Fallback to single bounding rect from selectionRegion
+              const x1Pixels = (leftPercent / 100) * pageWidth
+              const y1Pixels = (topPercent / 100) * pageHeight
+              const x2Pixels = ((leftPercent + widthPercent) / 100) * pageWidth
+              const y2Pixels = ((topPercent + heightPercent) / 100) * pageHeight
+
+              return [{
+                x1: x1Pixels,
+                y1: y1Pixels,
+                x2: x2Pixels,
+                y2: y2Pixels,
+                width: pageWidth,
+                height: pageHeight,
+                pageNumber: pageNumberForRect,
+              }]
+            }
+
+            const range = selection.getRangeAt(0)
+            const clientRects = range.getClientRects()
+
+            if (clientRects.length === 0) {
+              // Fallback to single bounding rect
+              const x1Pixels = (leftPercent / 100) * pageWidth
+              const y1Pixels = (topPercent / 100) * pageHeight
+              const x2Pixels = ((leftPercent + widthPercent) / 100) * pageWidth
+              const y2Pixels = ((topPercent + heightPercent) / 100) * pageHeight
+
+              return [{
+                x1: x1Pixels,
+                y1: y1Pixels,
+                x2: x2Pixels,
+                y2: y2Pixels,
+                width: pageWidth,
+                height: pageHeight,
+                pageNumber: pageNumberForRect,
+              }]
+            }
+
+            const pageRect = pageElement.getBoundingClientRect()
+
+            // Convert each client rect to our coordinate system (pixels relative to page)
+            return Array.from(clientRects)
+              .map(rect => {
+                const x1 = rect.left - pageRect.left
+                const y1 = rect.top - pageRect.top
+                const x2 = rect.right - pageRect.left
+                const y2 = rect.bottom - pageRect.top
+
+                return {
+                  x1,
+                  y1,
+                  x2,
+                  y2,
+                  width: pageWidth,
+                  height: pageHeight,
+                  pageNumber: pageNumberForRect,
+                }
+              })
+              .filter(rect => {
+                // Filter out invalid rects with zero or negative width/height
+                const rectWidth = rect.x2 - rect.x1
+                const rectHeight = rect.y2 - rect.y1
+                return rectWidth > 1 && rectHeight > 1
+              })
           }
+
+          const multiLineRects = getMultiLineRects()
+
+          // Find the top-left rect for reading order (important for sorting)
+          // Sort by vertical position first, then horizontal position
+          const sortedForReading = [...multiLineRects].sort((a, b) => {
+            const yDiff = a.y1 - b.y1
+            if (Math.abs(yDiff) > 5) return yDiff // Different lines
+            return a.x1 - b.x1 // Same line, sort left to right
+          })
+
+          const boundingRect = sortedForReading[0] // Use top-left rect as primary bounding rect
 
         const position: any = {
             boundingRect,
-            rects: [boundingRect],
+            rects: multiLineRects, // All rects for multi-line highlighting
             pageNumber: boundingRect.pageNumber,
             usePdfCoordinates: false,
           }
@@ -661,25 +877,7 @@ export function PdfViewer({
           sectionNumber || guessedSection || "Section (optional)"
         const bookmarkOptions = getBookmarkOptions(pageNumber)
 
-        if (
-          typeof selectionRegion.left === "number" &&
-          typeof selectionRegion.top === "number" &&
-          typeof selectionRegion.width === "number" &&
-          typeof selectionRegion.height === "number"
-        ) {
-          const nextOverlay = {
-            pageIndex: resolvedPageIndex,
-            area: {
-              pageIndex: resolvedPageIndex,
-              left: selectionRegion.left,
-              top: selectionRegion.top,
-              width: selectionRegion.width,
-              height: selectionRegion.height,
-            },
-          }
-
-          scheduleDraftOverlayUpdate(nextOverlay)
-        }
+        // Draft overlay is now set earlier with captured multi-line rects
 
 
         // Determine if popup should appear below (when selection is near top)
@@ -875,19 +1073,8 @@ export function PdfViewer({
 
       const draftAreas =
         draftOverlay && draftOverlay.pageIndex === props.pageIndex
-          ? [draftOverlay.area]
+          ? draftOverlay.areas
           : []
-
-      // Only log first page with highlights
-      if (props.pageIndex === 0 && pageHighlights.length > 0) {
-        const firstArea = pageHighlights[0]
-        const cssProps = props.getCssProperties(firstArea.area, props.rotation)
-        console.log("[RPV] renderHighlights (page 0 only)", {
-          area: firstArea.area,
-          cssProps,
-          highlightId: firstArea.h.id,
-        })
-      }
 
       return (
         <div>
