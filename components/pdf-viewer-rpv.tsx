@@ -547,6 +547,7 @@ export function PdfViewer({
 
         // Capture the selection rects IMMEDIATELY while selection still exists
         // (before any click handlers or state changes clear the selection)
+        console.log('[PDF-VIEWER] renderHighlightTarget - pageIndex:', pageIndex, 'selectionRegion:', selectionRegion, '- VERSION 2024-12-02-v2')
         const resolvedPageIndexEarly =
           typeof pageIndex === "number"
             ? pageIndex
@@ -556,6 +557,7 @@ export function PdfViewer({
                 ? selectionRegion.pageNumber - 1
                 : 0
         const pageNumberForRectEarly = resolvedPageIndexEarly + 1
+        console.log('[PDF-VIEWER] Resolved page - pageIndex:', resolvedPageIndexEarly, 'pageNumber:', pageNumberForRectEarly, '- VERSION 2024-12-02-v2')
 
         let pageElementEarly = document.querySelector(`[data-page-number="${pageNumberForRectEarly}"]`) as HTMLElement
         if (!pageElementEarly) {
@@ -635,6 +637,7 @@ export function PdfViewer({
         const widthPercent = selectionRegion.width
         const heightPercent = selectionRegion.height
 
+        console.log('[PDF-VIEWER] handleInlineSave - pageIndex:', pageIndex, 'selectionRegion:', selectionRegion, '- VERSION 2024-12-02-v2')
           const resolvedPageIndex =
             typeof pageIndex === "number"
               ? pageIndex
@@ -644,6 +647,7 @@ export function PdfViewer({
                   ? selectionRegion.pageNumber - 1
                   : 0
           const pageNumberForRect = resolvedPageIndex + 1
+          console.log('[PDF-VIEWER] handleInlineSave resolved - pageIndex:', resolvedPageIndex, 'pageNumber:', pageNumberForRect, '- VERSION 2024-12-02-v3')
 
           // Get the page element to find actual dimensions
           // Try multiple selectors since RPV might use different attributes
