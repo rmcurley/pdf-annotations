@@ -492,6 +492,55 @@ export function PdfViewer({
 
         cancelRef.current = cancelSelection
 
+        // Helper function to merge overlapping rectangles on the same line
+        const mergeOverlappingRects = (rects: Array<{
+          x1: number; y1: number; x2: number; y2: number;
+          width: number; height: number; pageNumber: number
+        }>) => {
+          if (rects.length === 0) return rects
+
+          // Sort by vertical position (y1) then horizontal position (x1)
+          const sorted = [...rects].sort((a, b) => {
+            const yDiff = a.y1 - b.y1
+            if (Math.abs(yDiff) > 5) return yDiff // Different lines (5px threshold)
+            return a.x1 - b.x1 // Same line, sort left to right
+          })
+
+          const merged: typeof rects = []
+          let current = sorted[0]
+
+          for (let i = 1; i < sorted.length; i++) {
+            const next = sorted[i]
+
+            // Check if on the same line (similar y coordinates)
+            const onSameLine = Math.abs(current.y1 - next.y1) < 5 && Math.abs(current.y2 - next.y2) < 5
+
+            // Check if overlapping or adjacent on same line
+            const overlapping = onSameLine && next.x1 <= current.x2 + 2 // 2px tolerance for adjacent
+
+            if (overlapping) {
+              // Merge: extend current rect to include next
+              // Keep current.x1 (don't use Math.min) to preserve reading-order start position
+              current = {
+                x1: current.x1, // Keep the leftmost x1 from reading order (already sorted)
+                y1: Math.min(current.y1, next.y1),
+                x2: Math.max(current.x2, next.x2),
+                y2: Math.max(current.y2, next.y2),
+                width: current.width,
+                height: current.height,
+                pageNumber: current.pageNumber,
+              }
+            } else {
+              // Start a new rect
+              merged.push(current)
+              current = next
+            }
+          }
+
+          merged.push(current)
+          return merged
+        }
+
         // Capture the selection rects IMMEDIATELY while selection still exists
         // (before any click handlers or state changes clear the selection)
         const resolvedPageIndexEarly =
@@ -563,55 +612,6 @@ export function PdfViewer({
               }, 0)
             }
           }
-        }
-
-        // Helper function to merge overlapping rectangles on the same line
-        function mergeOverlappingRects(rects: Array<{
-          x1: number; y1: number; x2: number; y2: number;
-          width: number; height: number; pageNumber: number
-        }>) {
-          if (rects.length === 0) return rects
-
-          // Sort by vertical position (y1) then horizontal position (x1)
-          const sorted = [...rects].sort((a, b) => {
-            const yDiff = a.y1 - b.y1
-            if (Math.abs(yDiff) > 5) return yDiff // Different lines (5px threshold)
-            return a.x1 - b.x1 // Same line, sort left to right
-          })
-
-          const merged: typeof rects = []
-          let current = sorted[0]
-
-          for (let i = 1; i < sorted.length; i++) {
-            const next = sorted[i]
-
-            // Check if on the same line (similar y coordinates)
-            const onSameLine = Math.abs(current.y1 - next.y1) < 5 && Math.abs(current.y2 - next.y2) < 5
-
-            // Check if overlapping or adjacent on same line
-            const overlapping = onSameLine && next.x1 <= current.x2 + 2 // 2px tolerance for adjacent
-
-            if (overlapping) {
-              // Merge: extend current rect to include next
-              // Keep current.x1 (don't use Math.min) to preserve reading-order start position
-              current = {
-                x1: current.x1, // Keep the leftmost x1 from reading order (already sorted)
-                y1: Math.min(current.y1, next.y1),
-                x2: Math.max(current.x2, next.x2),
-                y2: Math.max(current.y2, next.y2),
-                width: current.width,
-                height: current.height,
-                pageNumber: current.pageNumber,
-              }
-            } else {
-              // Start a new rect
-              merged.push(current)
-              current = next
-            }
-          }
-
-          merged.push(current)
-          return merged
         }
 
       const handleInlineSave = async () => {
