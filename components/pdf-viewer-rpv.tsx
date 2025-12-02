@@ -136,6 +136,7 @@ const formatStatus = (status: string) => {
 function toAreasFromHighlight(highlight: IHighlight): HighlightArea[] {
   const position = highlight.position as any
   if (!position) {
+    console.log('[PDF-VIEWER] toAreasFromHighlight: no position - VERSION 2024-12-02-v2')
     return []
   }
 
@@ -152,6 +153,8 @@ function toAreasFromHighlight(highlight: IHighlight): HighlightArea[] {
     : position.boundingRect
       ? [position.boundingRect]
       : []
+
+  console.log('[PDF-VIEWER] toAreasFromHighlight: rects count:', rects.length, 'usePdfCoordinates:', position.usePdfCoordinates, '- VERSION 2024-12-02-v2')
 
   if (rects.length === 0) {
     return []
@@ -497,6 +500,7 @@ export function PdfViewer({
           x1: number; y1: number; x2: number; y2: number;
           width: number; height: number; pageNumber: number
         }>) => {
+          console.log('[PDF-VIEWER] mergeOverlappingRects called with', rects.length, 'rects - VERSION 2024-12-02-v2')
           if (rects.length === 0) return rects
 
           // Sort by vertical position (y1) then horizontal position (x1)
@@ -567,6 +571,7 @@ export function PdfViewer({
           if (selection && selection.rangeCount > 0) {
             const range = selection.getRangeAt(0)
             const clientRects = range.getClientRects()
+            console.log('[PDF-VIEWER] Captured selection - clientRects count:', clientRects.length, '- VERSION 2024-12-02-v2')
 
             if (clientRects.length > 0) {
               const pageRect = pageElementEarly.getBoundingClientRect()
@@ -673,6 +678,7 @@ export function PdfViewer({
           }> => {
             // First, check if we have cached rects from the initial selection capture
             if (capturedRectsRef.current && capturedRectsRef.current.length > 0) {
+              console.log('[PDF-VIEWER] Using cached rects:', capturedRectsRef.current.length, '- VERSION 2024-12-02-v2')
               return capturedRectsRef.current
             }
 
@@ -745,6 +751,7 @@ export function PdfViewer({
           }
 
           const multiLineRects = getMultiLineRects()
+          console.log('[PDF-VIEWER] getMultiLineRects returned:', multiLineRects.length, 'rects - VERSION 2024-12-02-v2')
 
           // Find the top-left rect for reading order (important for sorting)
           // Sort by vertical position first, then horizontal position
@@ -762,6 +769,13 @@ export function PdfViewer({
             pageNumber: boundingRect.pageNumber,
             usePdfCoordinates: false,
           }
+
+        console.log('[PDF-VIEWER] Saving highlight with position:', JSON.stringify({
+          rectCount: multiLineRects.length,
+          boundingRect,
+          firstRect: multiLineRects[0],
+          lastRect: multiLineRects[multiLineRects.length - 1]
+        }, null, 2), '- VERSION 2024-12-02-v2')
 
         const newHighlight: NewHighlight = {
           content: { text: selectedText || inlineAnnotationText },
