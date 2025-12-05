@@ -136,9 +136,11 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function AppSidebar({ projects, documents, currentProjectId, ...props }: AppSidebarProps) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
 
-  const userData = user
+  // Wait for auth to finish loading before showing user data
+  // This prevents showing fallback data (email username) while profile is loading
+  const userData = !loading && user
     ? {
         name: user.profile?.first_name && user.profile?.last_name
           ? `${user.profile.first_name} ${user.profile.last_name}`

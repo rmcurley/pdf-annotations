@@ -168,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 email: authUser.email || '',
                 first_name: authUser.user_metadata?.first_name || '',
                 last_name: authUser.user_metadata?.last_name || '',
-                role: authUser.user_metadata?.role || 'member',
+                role: authUser.user_metadata?.role || 'user',
                 avatar_url: authUser.user_metadata?.avatar_url || '',
               })
               .select('first_name, last_name, role, avatar_url')
@@ -224,6 +224,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (session?.user) {
+      // Clear cached profile to force fresh fetch
+      try {
+        localStorage.removeItem(`profile_${session.user.id}`)
+        debugLog('Profile cache cleared for refresh')
+      } catch (error) {
+        debugLog('Error clearing profile cache:', error)
+      }
+
       const extendedUser = await fetchUserProfile(session.user)
       setUser(extendedUser)
     }

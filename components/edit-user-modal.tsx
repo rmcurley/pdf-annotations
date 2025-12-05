@@ -14,16 +14,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { MultiSelectCombobox } from "@/components/multi-select-combobox"
+import { RoleRadioGroup } from "@/components/role-radio-group"
+import { useAuth } from "@/contexts/auth-context"
 
 interface EditUserModalProps {
   open: boolean
@@ -45,13 +40,12 @@ interface Project {
   name: string
 }
 
-const ROLES = ['admin', 'member'] as const
-
 export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditUserModalProps) {
   const supabase = React.useMemo(() => createClient(), [])
+  const { user: currentUser, refreshProfile } = useAuth()
   const [firstName, setFirstName] = React.useState("")
   const [lastName, setLastName] = React.useState("")
-  const [role, setRole] = React.useState<string>("member")
+  const [role, setRole] = React.useState<string>("user")
   const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([])
   const [projects, setProjects] = React.useState<Project[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -80,19 +74,11 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
     if (open && user) {
       setFirstName(user.first_name || "")
       setLastName(user.last_name || "")
-      setRole(user.role || "member")
+      setRole(user.role || "user")
       setSelectedProjectIds(user.project_ids || [])
       loadProjects()
     }
   }, [open, user, loadProjects])
-
-  const handleProjectToggle = (projectId: string) => {
-    setSelectedProjectIds(prev =>
-      prev.includes(projectId)
-        ? prev.filter(id => id !== projectId)
-        : [...prev, projectId]
-    )
-  }
 
   const handleSave = async () => {
     if (!user?.id) return
@@ -135,6 +121,12 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
       }
 
       toast.success('User updated successfully')
+
+      // If we're editing the current user's profile, refresh the auth context
+      if (currentUser?.id === user.id) {
+        await refreshProfile()
+      }
+
       onOpenChange(false)
 
       // Notify parent to refresh data
@@ -205,56 +197,24 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
           </div>
 
           {/* Role Selector */}
-          <div className="grid gap-2">
-            <Label htmlFor="role">Role</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger id="role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((roleOption) => (
-                  <SelectItem key={roleOption} value={roleOption}>
-                    {roleOption.charAt(0).toUpperCase() + roleOption.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <RoleRadioGroup
+            label="Role"
+            value={role as "admin" | "member"}
+            onValueChange={setRole}
+            disabled={loading || saving}
+          />
 
           {/* Project Assignment */}
-          <div className="grid gap-2">
-            <Label>Project Access</Label>
-            <div className="border rounded-md p-4 max-h-[200px] overflow-y-auto space-y-3">
-              {loading ? (
-                <div className="text-sm text-muted-foreground text-center py-2">
-                  Loading projects...
-                </div>
-              ) : projects.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-2">
-                  No projects found
-                </div>
-              ) : (
-                projects.map((project) => (
-                  <div key={project.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`project-${project.id}`}
-                      checked={selectedProjectIds.includes(project.id)}
-                      onCheckedChange={() => handleProjectToggle(project.id)}
-                    />
-                    <label
-                      htmlFor={`project-${project.id}`}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                    >
-                      {project.name}
-                    </label>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {selectedProjectIds.length} project{selectedProjectIds.length !== 1 ? 's' : ''} selected
-            </div>
-          </div>
+          <MultiSelectCombobox
+            label="Project Access"
+            placeholder="Select projects..."
+            searchPlaceholder="Search projects..."
+            emptyText="No projects found."
+            options={projects.map(p => ({ value: p.id, label: p.name }))}
+            selectedValues={selectedProjectIds}
+            onSelectionChange={setSelectedProjectIds}
+            disabled={loading || saving}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -4,7 +4,7 @@
 
 import * as React from "react"
 import { IconMail, IconTrash, IconPencil, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight, IconDots } from "@tabler/icons-react"
-import { ChevronUp, ChevronDown } from "lucide-react"
+import { ChevronUp, ChevronDown, Plus, Check, ChevronsUpDown } from "lucide-react"
 import {
   ColumnDef,
   flexRender,
@@ -53,6 +53,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
+import { MultiSelectCombobox } from "@/components/multi-select-combobox"
+import { RoleRadioGroup } from "@/components/role-radio-group"
 
 interface AdminModalProps {
   open: boolean
@@ -68,12 +84,14 @@ interface UserRow {
   avatar_url?: string | null
   project_count: number
   project_ids: string[]
+  email_confirmed?: boolean
 }
 
 // Define columns factory function outside component to avoid recreating
 function createColumns(
   handleStartEdit: (user: UserRow) => void,
-  handleDeleteUser: (userId: string) => void
+  handleDeleteUser: (userId: string) => void,
+  handleResendInvite: (user: UserRow) => void
 ): ColumnDef<UserRow>[] {
   return [
     {
@@ -153,7 +171,16 @@ function createColumns(
           </div>
         </div>
       ),
-      cell: ({ row }) => <div>{row.getValue("email")}</div>,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <span>{row.getValue("email")}</span>
+          {row.original.email_confirmed === false && (
+            <Badge variant="secondary" className="text-xs">
+              Invited
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       accessorKey: "role",
@@ -184,11 +211,17 @@ function createColumns(
                 <IconPencil className="mr-2 h-4 w-4" />
                 Edit
               </DropdownMenuItem>
+              {row.original.email_confirmed === false && (
+                <DropdownMenuItem onClick={() => handleResendInvite(row.original)}>
+                  <IconMail className="mr-2 h-4 w-4" />
+                  Resend Invite
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={() => handleDeleteUser(row.original.id)}
-                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                className="hover:bg-destructive/10 focus:bg-destructive/10"
               >
-                <IconTrash className="mr-2 h-4 w-4 text-destructive" />
+                <IconTrash className="mr-2 h-4 w-4" />
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -203,7 +236,6 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const supabase = React.useMemo(() => createClient(), [])
   const [users, setUsers] = React.useState<UserRow[]>([])
   const [loading, setLoading] = React.useState(false)
-  const [inviteEmail, setInviteEmail] = React.useState("")
   const [inviting, setInviting] = React.useState(false)
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -212,6 +244,17 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false)
   const [selectedUser, setSelectedUser] = React.useState<UserRow | null>(null)
+
+  // Invite dialog state
+  const [inviteDialogOpen, setInviteDialogOpen] = React.useState(false)
+  const [inviteForm, setInviteForm] = React.useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    role: "user" as "admin" | "user",
+    projectIds: [] as string[],
+  })
+  const [projects, setProjects] = React.useState<{id: string; name: string}[]>([])
 
   // Load users and projects when modal opens
   const loadData = React.useCallback(async (options?: { showLoading?: boolean }) => {
@@ -224,7 +267,9 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('last_name', { ascending: true })
+        .order('first_name', { ascending: true })
+        .order('email', { ascending: true })
 
       if (usersError) throw usersError
 
@@ -235,7 +280,35 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
 
       if (membersError) throw membersError
 
-      // Transform users data to include project count
+      // Fetch all projects for invite dialog
+      const { data: projectsData, error: projectsError } = await supabase
+        .from('projects')
+        .select('id, name')
+        .order('name')
+
+      if (projectsError) throw projectsError
+      setProjects(projectsData || [])
+
+      // Fetch email confirmation status from auth.users (requires admin API)
+      const confirmationStatuses: Record<string, boolean> = {}
+      try {
+        const statusResponse = await fetch('/api/admin/get-user-statuses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userIds: (usersData || []).map((u: any) => u.id)
+          }),
+        })
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json()
+          Object.assign(confirmationStatuses, statusData.statuses || {})
+        }
+      } catch (error) {
+        console.error('Error fetching user statuses:', error)
+        // Continue without statuses
+      }
+
+      // Transform users data to include project count and email confirmation status
       const transformedUsers: UserRow[] = (usersData || []).map((user: any) => {
         const userProjects = (membersData || []).filter((m: { user_id: string; project_id: string }) => m.user_id === user.id)
         return {
@@ -243,10 +316,11 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
           first_name: user.first_name || '',
           last_name: user.last_name || '',
           email: user.email,
-          role: user.role || 'member',
+          role: user.role || 'user',
           avatar_url: user.avatar_url,
           project_count: userProjects.length,
           project_ids: userProjects.map((p: { project_id: string }) => p.project_id),
+          email_confirmed: confirmationStatuses[user.id] ?? true, // Default to true if unknown
         }
       })
 
@@ -269,6 +343,21 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
 
   const handleInviteUser = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(inviteForm.email)) {
+      toast.error('Please enter a valid email address')
+      return
+    }
+
+    // Check if email already exists
+    const existingUser = users.find(u => u.email.toLowerCase() === inviteForm.email.toLowerCase())
+    if (existingUser) {
+      toast.error('A user with this email already exists')
+      return
+    }
+
     setInviting(true)
 
     try {
@@ -277,17 +366,34 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: inviteEmail }),
+        body: JSON.stringify({
+          email: inviteForm.email,
+          firstName: inviteForm.firstName || undefined,
+          lastName: inviteForm.lastName || undefined,
+          role: inviteForm.role,
+          projectIds: inviteForm.projectIds,
+        }),
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to send invitation')
+        toast.error(data.error || 'Failed to send invitation')
+        setInviting(false)
+        return
       }
 
-      toast.success(`Invitation sent to ${inviteEmail}`)
-      setInviteEmail("")
+      toast.success(`Invitation sent to ${inviteForm.email}`)
+
+      // Clear form and close dialog
+      setInviteForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        role: "user",
+        projectIds: [],
+      })
+      setInviteDialogOpen(false)
 
       // Refresh the user list to show the new invited user without locking the table UI
       await loadData({ showLoading: false })
@@ -307,6 +413,32 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const handleUserUpdated = () => {
     loadData()
   }
+
+  const handleResendInvite = React.useCallback(async (user: UserRow) => {
+    try {
+      const response = await fetch('/api/admin/resend-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: user.email,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast.error(data.error || 'Failed to resend invitation')
+        return
+      }
+
+      toast.success(`Invitation resent to ${user.email}`)
+    } catch (error) {
+      console.error('Error resending invite:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to resend invitation')
+    }
+  }, [])
 
   const handleDeleteUser = React.useCallback(async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
@@ -339,9 +471,10 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
   const columns = React.useMemo(
     () => createColumns(
       handleStartEdit,
-      handleDeleteUser
+      handleDeleteUser,
+      handleResendInvite
     ),
-    [handleStartEdit, handleDeleteUser]
+    [handleStartEdit, handleDeleteUser, handleResendInvite]
   )
 
   const table = useReactTable({
@@ -379,37 +512,19 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Invite User Section */}
-        <div className="border-b pb-4">
-          <form onSubmit={handleInviteUser} className="flex gap-2">
-            <div className="flex-1">
-              <Label htmlFor="inviteEmail" className="sr-only">Email</Label>
-              <Input
-                id="inviteEmail"
-                type="email"
-                placeholder="Enter email to invite user..."
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                required
-                disabled={inviting}
-              />
-            </div>
-            <Button type="submit" disabled={inviting}>
-              <IconMail className="mr-2 h-4 w-4" />
-              {inviting ? 'Sending...' : 'Invite User'}
-            </Button>
-          </form>
-        </div>
-
-        {/* Search Users */}
-        <div className="flex items-center gap-2">
+        {/* Search Users and Invite Button */}
+        <div className="flex items-center justify-between gap-2">
           <SearchInput
             value={globalFilter ?? ""}
             onValueChange={(value) => setGlobalFilter(value)}
             placeholder="Search users..."
-            wrapperClassName="max-w-sm w-full"
+            wrapperClassName="w-1/3"
             className="h-9"
           />
+          <Button onClick={() => setInviteDialogOpen(true)} size="sm">
+            <Plus className="mr-2 h-4 w-4" />
+            Invite User
+          </Button>
         </div>
 
         {/* Users Table */}
@@ -541,6 +656,116 @@ export function AdminModal({ open, onOpenChange }: AdminModalProps) {
             </div>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Invite User Dialog */}
+    <Dialog open={inviteDialogOpen} onOpenChange={(open) => {
+      setInviteDialogOpen(open)
+      if (!open) {
+        // Clear form when dialog closes
+        setInviteForm({
+          firstName: "",
+          lastName: "",
+          email: "",
+          role: "user",
+          projectIds: [],
+        })
+      }
+    }}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Invite User</DialogTitle>
+          <DialogDescription>
+            Send an invitation to a new user and assign them to projects.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleInviteUser} className="space-y-4">
+          {/* First Name */}
+          <div className="space-y-2">
+            <Label htmlFor="firstName">First Name</Label>
+            <Input
+              id="firstName"
+              type="text"
+              value={inviteForm.firstName}
+              onChange={(e) => setInviteForm({ ...inviteForm, firstName: e.target.value })}
+              placeholder="John"
+            />
+          </div>
+
+          {/* Last Name */}
+          <div className="space-y-2">
+            <Label htmlFor="lastName">Last Name</Label>
+            <Input
+              id="lastName"
+              type="text"
+              value={inviteForm.lastName}
+              onChange={(e) => setInviteForm({ ...inviteForm, lastName: e.target.value })}
+              placeholder="Doe"
+            />
+          </div>
+
+          {/* Email Address */}
+          <div className="space-y-2">
+            <Label htmlFor="email">
+              Email Address <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={inviteForm.email}
+              onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              placeholder="john.doe@example.com"
+              required
+            />
+          </div>
+
+          {/* Role */}
+          <RoleRadioGroup
+            label="Role"
+            value={inviteForm.role}
+            onValueChange={(value) => setInviteForm({ ...inviteForm, role: value })}
+            disabled={inviting}
+          />
+
+          {/* Projects Multi-Select */}
+          <MultiSelectCombobox
+            label="Projects"
+            placeholder="Select projects..."
+            searchPlaceholder="Search projects..."
+            emptyText="No projects found."
+            options={projects.map(p => ({ value: p.id, label: p.name }))}
+            selectedValues={inviteForm.projectIds}
+            onSelectionChange={(values) => setInviteForm({ ...inviteForm, projectIds: values })}
+            disabled={inviting}
+          />
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setInviteForm({
+                  firstName: "",
+                  lastName: "",
+                  email: "",
+                  role: "user",
+                  projectIds: [],
+                })
+                setInviteDialogOpen(false)
+              }}
+              disabled={inviting}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={inviting}>
+              <IconMail className="mr-2 h-4 w-4" />
+              {inviting ? 'Sending...' : 'Send Invite'}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
     </>

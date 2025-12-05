@@ -294,27 +294,13 @@ export default function ProjectsPage() {
     })
 
     // Convert to array and sort by date
-    const dataPoints = Array.from(dateMap.entries())
+    return Array.from(dateMap.entries())
       .map(([date, counts]) => ({
         date,
         total: counts.total,
         approved: counts.approved,
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
-
-    // Calculate cumulative totals
-    let cumulativeTotal = 0
-    let cumulativeApproved = 0
-
-    return dataPoints.map(point => {
-      cumulativeTotal += point.total
-      cumulativeApproved += point.approved
-      return {
-        date: point.date,
-        total: cumulativeTotal,
-        approved: cumulativeApproved,
-      }
-    })
   })()
 
   return (

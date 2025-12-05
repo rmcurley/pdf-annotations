@@ -48,8 +48,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the email from request body
-    const { email } = await request.json()
+    // Get the data from request body
+    const { email, firstName, lastName, role, projectIds } = await request.json()
 
     if (!email || !email.includes('@')) {
       return NextResponse.json(
@@ -84,9 +84,11 @@ export async function POST(request: NextRequest) {
     // This sends an invitation email. The user will only be created after they accept
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
       data: {
-        // You can add custom metadata here if needed
         invited_by: user.id,
         invited_at: new Date().toISOString(),
+        first_name: firstName,
+        last_name: lastName,
+        role: role || 'user',
       },
       redirectTo: `${appUrl}/auth/callback`
     })
@@ -94,15 +96,86 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error inviting user:', error)
       console.error('Error details:', JSON.stringify(error, null, 2))
+
+      // Check if user exists in public.users but invitation failed
+      const { data: existingProfile } = await adminClient
+        .from('users')
+        .select('id, email')
+        .eq('email', email)
+        .single()
+
+      if (existingProfile) {
+        return NextResponse.json(
+          { error: 'A user with this email has already been invited. They may need to check their email to accept the invitation.' },
+          { status: 400 }
+        )
+      }
+
       return NextResponse.json(
         { error: error.message || 'Failed to send invitation', details: error },
         { status: 400 }
       )
     }
 
-    // Note: The user record in auth.users is created immediately, but won't be confirmed
-    // until they click the link and set their password. The trigger will create the
-    // public.users record when they complete signup.
+    // The invited user ID from auth.users
+    const invitedUserId = data.user?.id
+
+    if (!invitedUserId) {
+      return NextResponse.json(
+        { error: 'Failed to get invited user ID' },
+        { status: 500 }
+      )
+    }
+
+    // Create the user profile in public.users table immediately
+    // This allows us to assign projects right away
+    const { error: profileError } = await adminClient
+      .from('users')
+      .insert({
+        id: invitedUserId,
+        email: email,
+        first_name: firstName || null,
+        last_name: lastName || null,
+        role: role || 'user',
+      })
+
+    if (profileError) {
+      console.error('Error creating user profile:', profileError)
+      // Check if it's a duplicate key error (user already exists in public.users)
+      if (profileError.code === '23505') {
+        // User already exists in public.users, update instead
+        const { error: updateError } = await adminClient
+          .from('users')
+          .update({
+            first_name: firstName || null,
+            last_name: lastName || null,
+            role: role || 'user',
+          })
+          .eq('id', invitedUserId)
+
+        if (updateError) {
+          console.error('Error updating existing user profile:', updateError)
+        }
+      }
+    }
+
+    // Create project memberships if projects were selected
+    if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
+      const memberships = projectIds.map(projectId => ({
+        project_id: projectId,
+        user_id: invitedUserId,
+        role: 'member',
+      }))
+
+      const { error: membershipError } = await adminClient
+        .from('project_members')
+        .insert(memberships)
+
+      if (membershipError) {
+        console.error('Error creating project memberships:', membershipError)
+        // Don't fail the whole operation, but log it
+      }
+    }
 
     return NextResponse.json({
       success: true,

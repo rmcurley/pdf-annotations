@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
@@ -214,10 +214,10 @@ export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>Total Annotations</CardTitle>
+        <CardTitle>Daily Annotations</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Total for the {timeRange === "90d" ? "last 3 months" : timeRange === "30d" ? "last 30 days" : "last 7 days"}
+            Daily counts for the {timeRange === "90d" ? "last 3 months" : timeRange === "30d" ? "last 30 days" : "last 7 days"}
           </span>
           <span className="@[540px]/card:hidden">
             {timeRange === "90d" ? "Last 3 months" : timeRange === "30d" ? "Last 30 days" : "Last 7 days"}
@@ -303,6 +303,13 @@ export function ChartAreaInteractive({ data }: ChartAreaInteractiveProps = {}) {
                   day: "numeric",
                 })
               }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              domain={[0, 'auto']}
+              allowDecimals={false}
             />
             <ChartTooltip
               cursor={false}
