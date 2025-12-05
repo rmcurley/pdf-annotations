@@ -199,7 +199,7 @@ export function EditUserModal({ open, onOpenChange, user, onUserUpdated }: EditU
           {/* Role Selector */}
           <RoleRadioGroup
             label="Role"
-            value={role as "admin" | "member"}
+            value={role as "admin" | "user"}
             onValueChange={setRole}
             disabled={loading || saving}
           />
