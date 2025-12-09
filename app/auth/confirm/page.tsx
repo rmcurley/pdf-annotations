@@ -29,10 +29,10 @@ export default function ConfirmPage() {
           return
         }
 
-        // If this is an invite, redirect to a welcome/setup page
+        // If this is an invite, redirect to password setup (required)
         // Otherwise redirect to projects
         if (type === 'invite') {
-          router.push('/projects?welcome=true')
+          router.push('/setup-password')
         } else {
           router.push('/projects')
         }
