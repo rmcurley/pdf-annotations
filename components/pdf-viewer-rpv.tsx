@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useCallback, useMemo, useState } from "react"
+import { toast } from "sonner"
 
 import { Worker, Viewer, type Plugin, SpecialZoomLevel } from "@react-pdf-viewer/core"
 import { highlightPlugin, Trigger } from "@react-pdf-viewer/highlight"
@@ -64,10 +65,11 @@ import {
   Search as SearchIcon,
   X,
   Hand,
-  MousePointer2,
   Check,
   Bookmark,
   LayoutGrid,
+  Highlighter,
+  TextCursor,
 } from "lucide-react"
 import { formatAnnotationId } from "@/lib/comment-utils"
 
@@ -332,6 +334,7 @@ export function PdfViewer({
   const bookmark = bookmarkPlugin()
 
   const [sidebarView, setSidebarView] = React.useState<'bookmarks' | 'thumbnails' | null>(null)
+  const [customSelectionMode, setCustomSelectionMode] = React.useState<'annotate' | 'text-select'>('annotate')
 
   const thumbnail = thumbnailPlugin()
 
@@ -496,6 +499,11 @@ export function PdfViewer({
     trigger: Trigger.TextSelection,
 
       renderHighlightTarget: (props) => {
+        // Don't show annotation popup in text-select mode
+        if (customSelectionMode === 'text-select') {
+          return <></>
+        }
+
         const {
           highlightAreas,
           selectionRegion,
@@ -1587,7 +1595,10 @@ export function PdfViewer({
 
                   <SwitchSelectionMode mode={SelectionMode.Hand}>
                     {(props: any) => (
-                      <DropdownMenuItem onClick={props.onClick}>
+                      <DropdownMenuItem onClick={() => {
+                        props.onClick()
+                        setCustomSelectionMode('annotate')
+                      }}>
                         <Hand className="h-4 w-4 mr-2" />
                         <span className="flex-1">Hand Tool</span>
                         {props.isSelected && <Check className="h-4 w-4 ml-2" />}
@@ -1596,10 +1607,25 @@ export function PdfViewer({
                   </SwitchSelectionMode>
                   <SwitchSelectionMode mode={SelectionMode.Text}>
                     {(props: any) => (
-                      <DropdownMenuItem onClick={props.onClick}>
-                        <MousePointer2 className="h-4 w-4 mr-2" />
+                      <DropdownMenuItem onClick={() => {
+                        props.onClick()
+                        setCustomSelectionMode('annotate')
+                      }}>
+                        <Highlighter className="h-4 w-4 mr-2" />
+                        <span className="flex-1">Annotate Tool</span>
+                        {props.isSelected && customSelectionMode === 'annotate' && <Check className="h-4 w-4 ml-2" />}
+                      </DropdownMenuItem>
+                    )}
+                  </SwitchSelectionMode>
+                  <SwitchSelectionMode mode={SelectionMode.Text}>
+                    {(props: any) => (
+                      <DropdownMenuItem onClick={() => {
+                        props.onClick()
+                        setCustomSelectionMode('text-select')
+                      }}>
+                        <TextCursor className="h-4 w-4 mr-2" />
                         <span className="flex-1">Text Selection Tool</span>
-                        {props.isSelected && <Check className="h-4 w-4 ml-2" />}
+                        {props.isSelected && customSelectionMode === 'text-select' && <Check className="h-4 w-4 ml-2" />}
                       </DropdownMenuItem>
                     )}
                   </SwitchSelectionMode>
@@ -1628,6 +1654,41 @@ export function PdfViewer({
       }}
     </Toolbar>
   )
+
+  // Handle text selection copying in text-select mode
+  React.useEffect(() => {
+    if (customSelectionMode !== 'text-select') return
+
+    const handleMouseUp = async () => {
+      const selection = window.getSelection()
+      const selectedText = selection?.toString().trim()
+
+      if (selectedText && selectedText.length > 0) {
+        try {
+          await navigator.clipboard.writeText(selectedText)
+          toast.success('Copied', {
+            duration: 1500,
+          })
+          // Clear selection after a brief delay
+          setTimeout(() => {
+            selection?.removeAllRanges()
+          }, 200)
+        } catch (err) {
+          console.error('Failed to copy text:', err)
+          toast.error('Failed to copy')
+        }
+      }
+    }
+
+    // Only attach to PDF viewer area
+    const pdfContainer = document.querySelector('.rpv-core__viewer')
+    if (pdfContainer) {
+      pdfContainer.addEventListener('mouseup', handleMouseUp)
+      return () => {
+        pdfContainer.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [customSelectionMode])
 
   const lastScrolledIdRef = React.useRef<string | null>(null)
 
